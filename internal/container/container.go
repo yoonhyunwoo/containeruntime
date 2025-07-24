@@ -51,7 +51,7 @@ func Init() {
 
 	defer Must(syscall.Unmount("proc", 0))
 	defer Must(syscall.Unmount("mytemp", 0))
-
+	// TODO : 멈춤 후 시그널 오면 시작
 	Must(cmd.Run())
 }
 
