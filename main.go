@@ -2,14 +2,22 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"os"
 
 	"github.com/urfave/cli/v3"
 	cmd "github.com/yoonhyunwoo/containeruntime/cmd"
+	"github.com/yoonhyunwoo/containeruntime/internal/container"
 )
 
 func main() {
+	if err := container.InitStateDir(); err != nil {
+		if errors.Is(err, container.ErrInitState) {
+			fmt.Printf("Can not init state dir")
+		}
+	}
 
 	rootCmd := &cli.Command{
 		Commands: []*cli.Command{

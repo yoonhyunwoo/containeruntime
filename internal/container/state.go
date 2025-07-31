@@ -3,19 +3,27 @@ package container
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
+
+	"errors"
 )
 
-const (
+var (
 	containeruntimeStateDir string = "/run/containeruntime"
+
+	ErrInitState = errors.New("container: can not init state directory")
 )
 
-func initStateDir() error {
-	return os.MkdirAll(containeruntimeStateDir, 0755)
+func InitStateDir() error {
+	if err := os.MkdirAll(containeruntimeStateDir, 0755); err != nil {
+		return ErrInitState
+	}
+	return nil
 }
 
 func getStatePath(containerId string) string {
@@ -28,6 +36,7 @@ func saveState(state *specs.State) error {
 
 	f, err := os.Create(tempPath)
 	if err != nil {
+		log.Println("this?")
 		return fmt.Errorf("Can not save state: %v", err)
 	}
 	defer f.Close()

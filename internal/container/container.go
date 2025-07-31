@@ -15,7 +15,10 @@ import (
 func Create() {
 
 	state, _ := newContainerState("id", "/rootfs/ubuntu")
-	saveState(state)
+	err := saveState(state)
+	if err != nil {
+		log.Println(err)
+	}
 
 	fmt.Printf("Running: %v\n", os.Args[2:])
 
@@ -38,10 +41,17 @@ func Create() {
 	state.Pid = cmd.Process.Pid
 	state.Status = specs.StateCreated
 	saveState(state)
+}
 
-	Must(cmd.Process.Signal(syscall.SIGCONT))
-
-	Must(cmd.Wait())
+func Start(containerId string) error {
+	state, err := loadState(containerId)
+	if err != nil {
+		fmt.Printf("container : %v\n", err)
+		return fmt.Errorf("container : %v", err)
+	}
+	fmt.Println(state)
+	syscall.Kill(state.Pid, syscall.SIGCONT)
+	return nil
 }
 
 func Init() {
