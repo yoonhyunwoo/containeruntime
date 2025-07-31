@@ -8,10 +8,15 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/yoonhyunwoo/containeruntime/internal/linux/cgroup"
 )
 
-func Run() {
+func Create() {
+
+	state, _ := newContainerState("id", "/rootfs/ubuntu")
+	saveState(state)
+
 	fmt.Printf("Running: %v\n", os.Args[2:])
 
 	selfExe, err := os.Executable()
@@ -28,8 +33,15 @@ func Run() {
 		Unshareflags: syscall.CLONE_NEWNS,
 	}
 
-	Must(cmd.Run())
+	Must(cmd.Start())
 
+	state.Pid = cmd.Process.Pid
+	state.Status = specs.StateCreated
+	saveState(state)
+
+	Must(cmd.Process.Signal(syscall.SIGCONT))
+
+	Must(cmd.Wait())
 }
 
 func Init() {

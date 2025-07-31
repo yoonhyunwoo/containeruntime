@@ -13,7 +13,7 @@ var CreateCommand = &cli.Command{
 	Name: "create",
 	Action: func(ctx context.Context, command *cli.Command) error {
 		cgroup.SetupCgroups()
-		container.Run()
+		container.Create()
 		return nil
 	},
 }
