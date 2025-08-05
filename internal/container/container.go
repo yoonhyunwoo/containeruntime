@@ -1,17 +1,27 @@
 package container
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/yoonhyunwoo/containeruntime/internal/linux/cgroup"
 )
 
-func Run() {
+func Create() {
+
+	state, _ := newContainerState("id", "/rootfs/ubuntu")
+	err := saveState(state)
+	if err != nil {
+		log.Println(err)
+	}
+
 	fmt.Printf("Running: %v\n", os.Args[2:])
 
 	selfExe, err := os.Executable()
@@ -28,8 +38,40 @@ func Run() {
 		Unshareflags: syscall.CLONE_NEWNS,
 	}
 
-	Must(cmd.Run())
+	Must(cmd.Start())
 
+	state.Pid = cmd.Process.Pid
+	state.Status = specs.StateCreated
+	saveState(state)
+}
+
+func Start(containerId string) error {
+	state, err := loadState(containerId)
+	if err != nil {
+		fmt.Printf("container : %v\n", err)
+		return fmt.Errorf("container : %v", err)
+	}
+	state.Status = specs.StateRunning
+	syscall.Kill(state.Pid, syscall.SIGCONT)
+	saveState(state)
+	return nil
+}
+
+func State(containerId string) (*specs.State, error) {
+	state, err := loadState(containerId)
+	if err != nil {
+		fmt.Printf("container : %v\n", err)
+	}
+	return state, err
+}
+
+func Kill(containerId string, signal syscall.Signal) error {
+	state, err := loadState(containerId)
+	if err != nil {
+		fmt.Printf("container : %v\n", err)
+	}
+
+	return syscall.Kill(state.Pid, signal)
 }
 
 func Init() {
@@ -57,6 +99,17 @@ func Init() {
 		log.Fatal("Usage: containeruntime")
 	}
 	syscall.Exec(os.Args[2], os.Args[3:], os.Environ())
+}
+
+func Delete(containerId string) error {
+	_ = Kill(containerId, syscall.SIGKILL)
+	for range 5 {
+		time.Sleep(1 * time.Second)
+		if err := Kill(containerId, 0); err != nil {
+			return deleteState(containerId)
+		}
+	}
+	return errors.New("The container is still running")
 }
 
 func Must(err error) {
