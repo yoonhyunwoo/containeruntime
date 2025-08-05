@@ -65,6 +65,13 @@ func State(containerId string) (*specs.State, error) {
 	return state, err
 }
 
+func Kill(containerId string, signal syscall.Signal) error {
+	state, err := loadState(containerId)
+	if err != nil {
+		fmt.Printf("container : %v\n", err)
+	}
+
+	return syscall.Kill(state.Pid, signal)
 }
 
 func Init() {
