@@ -94,6 +94,17 @@ func Init() {
 	syscall.Exec(os.Args[2], os.Args[3:], os.Environ())
 }
 
+func Delete(containerId string) error {
+	_ = Kill(containerId, syscall.SIGKILL)
+	for range 5 {
+		time.Sleep(1 * time.Second)
+		if err := Kill(containerId, 0); err != nil {
+			return deleteState(containerId)
+		}
+	}
+	return errors.New("The container is still running")
+}
+
 func Must(err error) {
 	if err != nil {
 		log.Fatalln(err)

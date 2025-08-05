@@ -1,10 +1,12 @@
 package cgroup
 
 import (
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 )
 
 func SetupCgroups() {
@@ -42,4 +44,22 @@ func SetupCgroups() {
 	if err != nil {
 		log.Println(err)
 	}
+}
+func CleanCgroups() error {
+	cgroupRoot := "/sys/fs/cgroup"
+	processCgroup := filepath.Join(cgroupRoot, "gamap-container", "processes")
+	if _, err := os.Stat(processCgroup); err == nil {
+		procsFile := filepath.Join(processCgroup, "cgroup.procs")
+		err = os.WriteFile(procsFile, []byte(""), 0700)
+		if err != nil {
+			return errors.New("Error removing cgroup processes")
+		}
+		time.Sleep(100 * time.Millisecond)
+		err = os.Remove(processCgroup)
+		if err != nil {
+			return errors.New("Error removing cgroup processes")
+		}
+	}
+
+	return nil
 }
