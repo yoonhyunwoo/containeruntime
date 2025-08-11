@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log"
 	"os"
 
@@ -14,9 +12,7 @@ import (
 
 func main() {
 	if err := container.InitStateDir(); err != nil {
-		if errors.Is(err, container.ErrInitState) {
-			fmt.Printf("Can not init state dir")
-		}
+		log.Fatal(err)
 	}
 
 	rootCmd := &cli.Command{

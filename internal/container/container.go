@@ -14,18 +14,33 @@ import (
 	"github.com/yoonhyunwoo/containeruntime/internal/linux/cgroup"
 )
 
-func Create() {
+var (
+	containeruntimeStateDir string = "/run/containeruntime"
+
+	ErrNotFound         = errors.New("container : not found")
+	ErrAlreadyExists    = errors.New("container : already exists")
+	ErrStateCorrupted   = errors.New("container : state corrupted")
+	ErrInitContainer    = errors.New("container : init container failed")
+	ErrStillRunning     = errors.New("container : still running")
+	ErrInvalidArguments = errors.New("container : invalid arguments")
+	ErrStateOperation   = errors.New("container : state operation failed")
+	ErrInitState        = errors.New("container : init directory failed")
+)
+
+func Create() error {
 
 	state, _ := newContainerState("id", "/rootfs/ubuntu")
 	err := saveState(state)
 	if err != nil {
-		log.Println(err)
+		return ErrStateOperation
 	}
 
 	fmt.Printf("Running: %v\n", os.Args[2:])
 
 	selfExe, err := os.Executable()
-	Must(err)
+	if err != nil {
+		return err
+	}
 
 	cmd := exec.Command(selfExe, append([]string{"init"}, os.Args[2:]...)...)
 	cmd.Stdin = os.Stdin
@@ -38,37 +53,37 @@ func Create() {
 		Unshareflags: syscall.CLONE_NEWNS,
 	}
 
-	Must(cmd.Start())
+	if err := cmd.Start(); err != nil {
+		return ErrInitContainer
+	}
 
 	state.Pid = cmd.Process.Pid
 	state.Status = specs.StateCreated
-	saveState(state)
+	return saveState(state)
 }
 
 func Start(containerId string) error {
 	state, err := loadState(containerId)
 	if err != nil {
-		fmt.Printf("container : %v\n", err)
-		return fmt.Errorf("container : %v", err)
+		return err
 	}
 	state.Status = specs.StateRunning
 	syscall.Kill(state.Pid, syscall.SIGCONT)
-	saveState(state)
-	return nil
+	return saveState(state)
 }
 
 func State(containerId string) (*specs.State, error) {
 	state, err := loadState(containerId)
 	if err != nil {
-		fmt.Printf("container : %v\n", err)
+		return nil, ErrNotFound
 	}
-	return state, err
+	return state, nil
 }
 
 func Kill(containerId string, signal syscall.Signal) error {
 	state, err := loadState(containerId)
 	if err != nil {
-		fmt.Printf("container : %v\n", err)
+		return err
 	}
 
 	return syscall.Kill(state.Pid, signal)
@@ -81,24 +96,38 @@ func Init() {
 
 	fmt.Printf("Running: %v\n", os.Args[2:])
 
-	cgroup.SetupCgroups()
+	if err := cgroup.SetupCgroups(); err != nil {
+		log.Fatal(err)
+	}
 
-	Must(syscall.Sethostname([]byte("container")))
+	if err := syscall.Sethostname([]byte("container")); err != nil {
+		log.Fatal(err)
+	}
 
 	const rootfs = "/root/ubuntufs"
-	Must(syscall.Chroot(rootfs))
-	Must(os.Chdir("/"))
+	if err := syscall.Chroot(rootfs); err != nil {
+		log.Fatal(err)
+	}
+	if err := os.Chdir("/"); err != nil {
+		log.Fatal(err)
+	}
 
-	Must(syscall.Mount("proc", "proc", "proc", 0, ""))
-	Must(syscall.Mount("tmpfs", "mytemp", "tmpfs", 0, ""))
+	if err := syscall.Mount("proc", "proc", "proc", 0, ""); err != nil {
+		log.Fatal(err)
+	}
+	if err := syscall.Mount("tmpfs", "mytemp", "tmpfs", 0, ""); err != nil {
+		log.Fatal(err)
+	}
 
-	defer Must(syscall.Unmount("proc", 0))
-	defer Must(syscall.Unmount("mytemp", 0))
+	defer syscall.Unmount("proc", 0)
+	defer syscall.Unmount("mytemp", 0)
 
 	if len(os.Args) < 3 {
 		log.Fatal("Usage: containeruntime")
 	}
-	syscall.Exec(os.Args[2], os.Args[3:], os.Environ())
+	if err := syscall.Exec(os.Args[2], os.Args[3:], os.Environ()); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func Delete(containerId string) error {
@@ -109,11 +138,5 @@ func Delete(containerId string) error {
 			return deleteState(containerId)
 		}
 	}
-	return errors.New("The container is still running")
-}
-
-func Must(err error) {
-	if err != nil {
-		log.Fatalln(err)
-	}
+	return ErrStillRunning
 }

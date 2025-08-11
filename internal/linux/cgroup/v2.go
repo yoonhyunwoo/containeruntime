@@ -2,49 +2,56 @@ package cgroup
 
 import (
 	"errors"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"time"
 )
 
-func SetupCgroups() {
+var (
+	ErrWriteFailed = errors.New("cgroup : write failed")
+	ErrCleanFailed = errors.New("cgroup : clean failed")
+)
+
+func SetupCgroups() error {
 	cgroupRoot := "/sys/fs/cgroup"
 	containerCgroup := filepath.Join(cgroupRoot, "gamap-container")
 	processCgroup := filepath.Join(containerCgroup, "processes")
 
 	err := os.Mkdir(containerCgroup, 0755)
 	if err != nil && !os.IsExist(err) {
-		log.Fatalln(err)
+		return ErrWriteFailed
 	}
 
 	err = os.WriteFile(filepath.Join(containerCgroup, "cgroup.subtree_control"), []byte("+pids +memory"), 0700)
 	if err != nil {
-		log.Println(err)
+		return ErrWriteFailed
 	}
 
 	err = os.Mkdir(processCgroup, 0755)
 	if err != nil && !os.IsExist(err) {
-		log.Fatalln(err)
+		return ErrWriteFailed
 	}
 
 	err = os.WriteFile(filepath.Join(processCgroup, "pids.max"), []byte("20"), 0700)
 	if err != nil {
-		log.Println(err)
+		return ErrWriteFailed
 	}
 
 	err = os.WriteFile(filepath.Join(processCgroup, "memory.max"), []byte("100M"), 0700)
 	if err != nil {
-		log.Println(err)
+		return ErrWriteFailed
 	}
 
 	pid := strconv.Itoa(os.Getpid())
 	err = os.WriteFile(filepath.Join(processCgroup, "cgroup.procs"), []byte(pid), 0700)
 	if err != nil {
-		log.Println(err)
+		return ErrWriteFailed
 	}
+
+	return nil
 }
+
 func CleanCgroups() error {
 	cgroupRoot := "/sys/fs/cgroup"
 	processCgroup := filepath.Join(cgroupRoot, "gamap-container", "processes")
@@ -52,12 +59,12 @@ func CleanCgroups() error {
 		procsFile := filepath.Join(processCgroup, "cgroup.procs")
 		err = os.WriteFile(procsFile, []byte(""), 0700)
 		if err != nil {
-			return errors.New("Error removing cgroup processes")
+			return ErrCleanFailed
 		}
 		time.Sleep(100 * time.Millisecond)
 		err = os.Remove(processCgroup)
 		if err != nil {
-			return errors.New("Error removing cgroup processes")
+			return ErrCleanFailed
 		}
 	}
 

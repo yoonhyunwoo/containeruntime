@@ -25,14 +25,12 @@ var KillCommand = &cli.Command{
 
 		signalNumber, err := strconv.Atoi((command.Args().Get(1)))
 		if err != nil {
-			fmt.Printf("Invalid signal number: %s\n", command.Args().Get(1))
-			return nil
+			return err
 		}
 
 		containerState, err := container.State(containerId)
 		if err != nil {
-			fmt.Printf("Unable to get container state: %s\n", err)
-			return nil
+			return err
 		}
 
 		if containerState.Status == specs.StateRunning || containerState.Status == specs.StateCreated {
@@ -42,7 +40,7 @@ var KillCommand = &cli.Command{
 		signal := syscall.Signal(signalNumber)
 		err = container.Kill(containerId, signal)
 		if err != nil {
-			fmt.Printf("Can not start conateinr %s", containerId)
+			return err
 		}
 		return nil
 	},

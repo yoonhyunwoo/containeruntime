@@ -2,21 +2,11 @@ package container
 
 import (
 	"encoding/json"
-	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
-
-	"errors"
-)
-
-var (
-	containeruntimeStateDir string = "/run/containeruntime"
-
-	ErrInitState = errors.New("container: can not init state directory")
 )
 
 func InitStateDir() error {
@@ -36,14 +26,13 @@ func saveState(state *specs.State) error {
 
 	f, err := os.Create(tempPath)
 	if err != nil {
-		log.Println("this?")
-		return fmt.Errorf("Can not save state: %v", err)
+		return ErrStateOperation
 	}
 	defer f.Close()
 	defer os.Remove(tempPath)
 
 	if err := json.NewEncoder(f).Encode(state); err != nil {
-		return fmt.Errorf("Can not parsing state : %v", err)
+		return ErrStateCorrupted
 	}
 
 	f.Close()
@@ -56,12 +45,12 @@ func loadState(containerId string) (*specs.State, error) {
 
 	f, err := os.Open(statePath)
 	if err != nil {
-		return nil, fmt.Errorf("Can not open state: %v", err)
+		return nil, ErrNotFound
 	}
 	defer f.Close()
 
 	if err = json.NewDecoder(f).Decode(state); err != nil {
-		return nil, fmt.Errorf("Can not parsing state : %v", err)
+		return nil, ErrStateCorrupted
 	}
 
 	return state, nil
@@ -70,16 +59,16 @@ func loadState(containerId string) (*specs.State, error) {
 func deleteState(containerId string) error {
 	statePath := getStatePath(containerId)
 	if err := os.Remove(statePath); err != nil {
-		return fmt.Errorf("Can not delete state: %v", err)
+		return ErrStateOperation
 	}
 	return nil
 }
 
-func listState(containerId string) ([]*specs.State, error) {
+func listState() ([]*specs.State, error) {
 	var states []*specs.State
 	files, err := os.ReadDir(containeruntimeStateDir)
 	if err != nil {
-		return nil, fmt.Errorf("Can not list state: %v", err)
+		return nil, ErrStateOperation
 	}
 
 	for _, file := range files {
@@ -111,12 +100,12 @@ func newContainerState(id, bundlePath string) (*specs.State, error) {
 func setContainerPID(containerId string, pid int) error {
 	state, err := loadState(containerId)
 	if err != nil {
-		return fmt.Errorf("Can set container pid: %v", err)
+		return ErrStateCorrupted
 	}
 
 	state.Pid = pid
 	if err := saveState(state); err != nil {
-		return fmt.Errorf("Can set container pid: %v", err)
+		return ErrStateOperation
 	}
 
 	return nil

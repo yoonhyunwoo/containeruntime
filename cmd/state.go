@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 
 	"github.com/urfave/cli/v3"
@@ -16,17 +15,19 @@ var StateCommand = &cli.Command{
 	ArgsUsage: "<container-id>",
 	Action: func(ctx context.Context, command *cli.Command) error {
 		if command.Args().Len() != 1 {
-
 			return nil
 		}
 
 		containerId := command.Args().First()
 		containerState, err := container.State(containerId)
 		if err != nil {
-			fmt.Printf("Can not get conateinr %s", containerId)
+			return err
 		}
 
-		containerStateBytes, _ := json.MarshalIndent(containerState, "", " ")
+		containerStateBytes, err := json.MarshalIndent(containerState, "", " ")
+		if err != nil {
+			return err
+		}
 		os.Stdout.Write(containerStateBytes)
 		return nil
 	},

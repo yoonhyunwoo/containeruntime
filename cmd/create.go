@@ -14,8 +14,13 @@ var CreateCommand = &cli.Command{
 	Usage:     "This command creates a new container. You must provide a unique container ID and the path to the bundle containing the container's configuration.",
 	ArgsUsage: "<container-id> <path-to-bundle>",
 	Action: func(ctx context.Context, command *cli.Command) error {
-		cgroup.SetupCgroups()
-		container.Create()
+		if err := cgroup.SetupCgroups(); err != nil {
+			return err
+		}
+
+		if err := container.Create(); err != nil {
+			return err
+		}
 		return nil
 	},
 }
