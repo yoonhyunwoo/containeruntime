@@ -4,7 +4,7 @@ GOOS=linux
 .PHONY: build setup-ubuntu lint
 
 build:
-	GOOS=$(GOOS) go build -o $(BINARY_NAME) .
+	GOOS=$(GOOS) go build -o $(BINARY_NAME) cmd/
 
 setup-ubuntu:
 	sudo docker create --name temp-ubuntu ubuntu:22.04

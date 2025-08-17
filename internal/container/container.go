@@ -1,7 +1,6 @@
 package container
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -11,21 +10,24 @@ import (
 	"time"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/yoonhyunwoo/containeruntime/internal/linux/cgroup"
 )
 
-func Create() {
-
-	state, _ := newContainerState("id", "/rootfs/ubuntu")
-	err := saveState(state)
+func Create() error {
+	state, err := newContainerState("id", "/rootfs/ubuntu")
 	if err != nil {
-		log.Println(err)
+		return fmt.Errorf("container: failed to create new state: %w", err)
+	}
+
+	if err := saveState(state); err != nil {
+		return fmt.Errorf("container: failed to save initial state: %w", err)
 	}
 
 	fmt.Printf("Running: %v\n", os.Args[2:])
 
 	selfExe, err := os.Executable()
-	Must(err)
+	if err != nil {
+		return fmt.Errorf("container: failed to get executable path: %w", err)
+	}
 
 	cmd := exec.Command(selfExe, append([]string{"init"}, os.Args[2:]...)...)
 	cmd.Stdin = os.Stdin
@@ -38,40 +40,61 @@ func Create() {
 		Unshareflags: syscall.CLONE_NEWNS,
 	}
 
-	Must(cmd.Start())
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("container: failed to start command: %w", err)
+	}
 
 	state.Pid = cmd.Process.Pid
 	state.Status = specs.StateCreated
-	saveState(state)
+
+	if err := saveState(state); err != nil {
+		return fmt.Errorf("container: failed to update state with PID: %w", err)
+	}
+
+	return nil
 }
 
 func Start(containerId string) error {
 	state, err := loadState(containerId)
 	if err != nil {
-		fmt.Printf("container : %v\n", err)
-		return fmt.Errorf("container : %v", err)
+		return fmt.Errorf("container: failed to start container %s: %w", containerId, err)
 	}
+
 	state.Status = specs.StateRunning
-	syscall.Kill(state.Pid, syscall.SIGCONT)
-	saveState(state)
+
+	if err := syscall.Kill(state.Pid, syscall.SIGCONT); err != nil {
+		state.Status = specs.StateStopped
+		saveState(state)
+		return fmt.Errorf("container: failed to send SIGCONT to PID %d: %w", state.Pid, err)
+	}
+
+	if err := saveState(state); err != nil {
+		state.Status = specs.StateStopped
+		return fmt.Errorf("container: failed to start container %s: %w", containerId, err)
+	}
+
 	return nil
 }
 
 func State(containerId string) (*specs.State, error) {
 	state, err := loadState(containerId)
 	if err != nil {
-		fmt.Printf("container : %v\n", err)
+		return nil, err
 	}
-	return state, err
+	return state, nil
 }
 
 func Kill(containerId string, signal syscall.Signal) error {
 	state, err := loadState(containerId)
 	if err != nil {
-		fmt.Printf("container : %v\n", err)
+		return err
 	}
 
-	return syscall.Kill(state.Pid, signal)
+	if err := syscall.Kill(state.Pid, signal); err != nil {
+		return fmt.Errorf("container: failed to send signal %d to container %s with PID %d: %w", signal, containerId, state.Pid, err)
+	}
+
+	return nil
 }
 
 func Init() {
@@ -81,39 +104,55 @@ func Init() {
 
 	fmt.Printf("Running: %v\n", os.Args[2:])
 
-	cgroup.SetupCgroups()
-
-	Must(syscall.Sethostname([]byte("container")))
+	if err := syscall.Sethostname([]byte("container")); err != nil {
+		log.Fatalf("container: failed to set hostname: %v", err)
+	}
 
 	const rootfs = "/root/ubuntufs"
-	Must(syscall.Chroot(rootfs))
-	Must(os.Chdir("/"))
+	if err := syscall.Chroot(rootfs); err != nil {
+		log.Fatalf("container: failed to chroot to %s: %v", rootfs, err)
+	}
+	if err := os.Chdir("/"); err != nil {
+		log.Fatalf("container: failed to change directory to /: %v", err)
+	}
 
-	Must(syscall.Mount("proc", "proc", "proc", 0, ""))
-	Must(syscall.Mount("tmpfs", "mytemp", "tmpfs", 0, ""))
+	defer func() {
+		if err := syscall.Unmount("proc", 0); err != nil {
+			log.Printf("container: failed to unmount proc: %v", err)
+		}
+	}()
+	if err := syscall.Mount("proc", "proc", "proc", 0, ""); err != nil {
+		log.Fatalf("container: failed to mount proc: %v", err)
+	}
 
-	defer Must(syscall.Unmount("proc", 0))
-	defer Must(syscall.Unmount("mytemp", 0))
+	defer func() {
+		if err := syscall.Unmount("mytemp", 0); err != nil {
+			log.Printf("container: failed to unmount mytemp: %v", err)
+		}
+	}()
+	if err := syscall.Mount("tmpfs", "mytemp", "tmpfs", 0, ""); err != nil {
+		log.Fatalf("container: failed to mount tmpfs: %v", err)
+	}
 
 	if len(os.Args) < 3 {
-		log.Fatal("Usage: containeruntime")
+		log.Fatal("Usage: containeruntime [command] [args...]")
 	}
-	syscall.Exec(os.Args[2], os.Args[3:], os.Environ())
+
+	if err := syscall.Exec(os.Args[2], os.Args[3:], os.Environ()); err != nil {
+		log.Fatalf("container: failed to exec command %s: %v", os.Args[2], err)
+	}
 }
 
 func Delete(containerId string) error {
-	_ = Kill(containerId, syscall.SIGKILL)
+	err := Kill(containerId, syscall.SIGKILL)
+	if err != nil {
+		return fmt.Errorf("container: failed to delete container %s: %w", containerId, err)
+	}
 	for range 5 {
 		time.Sleep(1 * time.Second)
 		if err := Kill(containerId, 0); err != nil {
 			return deleteState(containerId)
 		}
 	}
-	return errors.New("The container is still running")
-}
-
-func Must(err error) {
-	if err != nil {
-		log.Fatalln(err)
-	}
+	return fmt.Errorf("container: the container %s is stil running: %w", containerId, err)
 }
