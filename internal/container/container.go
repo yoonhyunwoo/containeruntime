@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
+
+	"github.com/yoonhyunwoo/containeruntime/internal/linux/cgroup/v2"
 )
 
 // Create initializes a new container with the given ID and root filesystem path.
@@ -34,6 +36,20 @@ func Create(containerID, bundlePath string) error {
 	if err := saveState(state); err != nil {
 		return fmt.Errorf("container: failed to save initial state: %w", err)
 	}
+
+	cgroupManager := cgroup.NewCgroupManager(containerID, []cgroup.SubSystem{
+		&cgroup.MemorySubSystem{Limit: *spec.Linux.Resources.Memory.Limit},
+		&cgroup.PidsSubSystem{MaxPids: spec.Linux.Resources.Pids.Limit},
+		&cgroup.CpuSubSystem{
+			Quota:    *spec.Linux.Resources.CPU.Quota,
+			Period:   *spec.Linux.Resources.CPU.Period,
+			Weight:   *spec.Linux.Resources.CPU.Shares,
+			MaxBurst: *spec.Linux.Resources.CPU.Burst,
+			Idle:     *spec.Linux.Resources.CPU.Idle,
+		},
+	})
+
+	cgroupManager.Setup()
 
 	selfExe, err := os.Executable()
 	if err != nil {
@@ -222,6 +238,7 @@ func Delete(containerID string) error {
 	return fmt.Errorf("container: the container %s is stil running: %w", containerID, err)
 }
 
+// SetContainerState updates the state of the container with the given ID.
 func SetContainerState(containerID string, state *specs.State) error {
 	if err := saveState(state); err != nil {
 		return fmt.Errorf("container: failed to update state for container %s: %w", containerID, err)
