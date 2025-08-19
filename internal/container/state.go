@@ -14,6 +14,7 @@ var (
 	containeruntimeStateDir string = "/run/containeruntime"
 )
 
+// InitStateDir initializes the state directory for container runtime.
 func InitStateDir() error {
 	if err := os.MkdirAll(containeruntimeStateDir, 0755); err != nil {
 		return fmt.Errorf("container: failed to create state directory: %v", err)
@@ -21,8 +22,8 @@ func InitStateDir() error {
 	return nil
 }
 
-func getStatePath(containerId string) string {
-	return filepath.Join(containeruntimeStateDir, containerId+".json")
+func getStatePath(containerID string) string {
+	return filepath.Join(containeruntimeStateDir, containerID+".json")
 }
 
 func saveState(state *specs.State) error {
@@ -48,32 +49,32 @@ func saveState(state *specs.State) error {
 	return nil
 }
 
-func loadState(containerId string) (*specs.State, error) {
-	statePath := getStatePath(containerId)
+func loadState(containerID string) (*specs.State, error) {
+	statePath := getStatePath(containerID)
 	state := &specs.State{}
 
 	f, err := os.Open(statePath)
 	if err != nil {
-		return nil, fmt.Errorf("container: failed to open state file for container %s: %w", containerId, err)
+		return nil, fmt.Errorf("container: failed to open state file for container %s: %w", containerID, err)
 	}
 	defer f.Close()
 
 	if err = json.NewDecoder(f).Decode(state); err != nil {
-		return nil, fmt.Errorf("container: failed to decode state file for container %s: %w", containerId, err)
+		return nil, fmt.Errorf("container: failed to decode state file for container %s: %w", containerID, err)
 	}
 
 	return state, nil
 }
 
-func deleteState(containerId string) error {
-	statePath := getStatePath(containerId)
+func deleteState(containerID string) error {
+	statePath := getStatePath(containerID)
 	if err := os.Remove(statePath); err != nil {
-		return fmt.Errorf("container: failed to delete state file for container %s: %w", containerId, err)
+		return fmt.Errorf("container: failed to delete state file for container %s: %w", containerID, err)
 	}
 	return nil
 }
 
-func listState(containerId string) ([]*specs.State, error) {
+func listState(containerID string) ([]*specs.State, error) {
 	var states []*specs.State
 	files, err := os.ReadDir(containeruntimeStateDir)
 	if err != nil {
@@ -94,7 +95,7 @@ func listState(containerId string) ([]*specs.State, error) {
 	return states, nil
 }
 
-func newContainerState(id, bundlePath string) (*specs.State, error) {
+func newContainerState(id, bundlePath string) *specs.State {
 	state := &specs.State{
 		Version:     specs.Version,
 		ID:          id,
@@ -103,19 +104,5 @@ func newContainerState(id, bundlePath string) (*specs.State, error) {
 		Bundle:      bundlePath,
 		Annotations: nil,
 	}
-	return state, nil
-}
-
-func setContainerPID(containerId string, pid int) error {
-	state, err := loadState(containerId)
-	if err != nil {
-		return fmt.Errorf("container: failed to load state for container %s: %w", containerId, err)
-	}
-
-	state.Pid = pid
-	if err := saveState(state); err != nil {
-		return fmt.Errorf("container: failed to save updated state for container %s: %w", containerId, err)
-	}
-
-	return nil
+	return state
 }

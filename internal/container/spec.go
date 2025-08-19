@@ -3,8 +3,9 @@ package container
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/opencontainers/runtime-spec/specs-go"
 	"os"
+
+	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
 func loadSpec(specPath string) (*specs.Spec, error) {
@@ -20,4 +21,5 @@ func loadSpec(specPath string) (*specs.Spec, error) {
 	}
 
 	return &spec, nil
+
 }
