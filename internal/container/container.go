@@ -1,119 +1,247 @@
 package container
 
 import (
-	"errors"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/yoonhyunwoo/containeruntime/internal/linux/cgroup"
+
+	"github.com/yoonhyunwoo/containeruntime/internal/linux/cgroup/v2"
 )
 
-func Create() {
+// Create initializes a new container with the given ID and root filesystem path.
+func Create(containerID, bundlePath string) error {
 
-	state, _ := newContainerState("id", "/rootfs/ubuntu")
-	err := saveState(state)
+	bundlePath, err := filepath.Abs(bundlePath)
 	if err != nil {
-		log.Println(err)
+		return fmt.Errorf("container: failed to get absolute path for bundle: %w", err)
 	}
 
-	fmt.Printf("Running: %v\n", os.Args[2:])
+	configPath := filepath.Join(bundlePath, "config.json")
+
+	state := newContainerState(containerID, bundlePath)
+
+	spec, err := loadSpec(configPath)
+	if err != nil {
+		return err
+	}
+
+	if err := saveState(state); err != nil {
+		return fmt.Errorf("container: failed to save initial state: %w", err)
+	}
+
+	cgroupManager := cgroup.NewCgroupManager(containerID, []cgroup.SubSystem{
+		&cgroup.MemorySubSystem{Limit: *spec.Linux.Resources.Memory.Limit},
+		&cgroup.PidsSubSystem{MaxPids: spec.Linux.Resources.Pids.Limit},
+		&cgroup.CpuSubSystem{
+			Quota:    *spec.Linux.Resources.CPU.Quota,
+			Period:   *spec.Linux.Resources.CPU.Period,
+			Weight:   *spec.Linux.Resources.CPU.Shares,
+			MaxBurst: *spec.Linux.Resources.CPU.Burst,
+			Idle:     *spec.Linux.Resources.CPU.Idle,
+		},
+	})
+
+	cgroupManager.Setup()
 
 	selfExe, err := os.Executable()
-	Must(err)
+	if err != nil {
+		return fmt.Errorf("container: failed to get executable path: %w", err)
+	}
 
-	cmd := exec.Command(selfExe, append([]string{"init"}, os.Args[2:]...)...)
+	cmd := exec.Command(selfExe, append([]string{"init"}, spec.Process.Args...)...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags: syscall.CLONE_NEWUTS |
-			syscall.CLONE_NEWPID |
-			syscall.CLONE_NEWNS,
-		Unshareflags: syscall.CLONE_NEWNS,
+
+	var cloneFlags uintptr
+	for _, ns := range spec.Linux.Namespaces {
+		switch ns.Type {
+		case specs.PIDNamespace:
+			cloneFlags |= syscall.CLONE_NEWPID
+		case specs.UTSNamespace:
+			cloneFlags |= syscall.CLONE_NEWUTS
+		case specs.MountNamespace:
+			cloneFlags |= syscall.CLONE_NEWNS
+		case specs.IPCNamespace:
+			cloneFlags |= syscall.CLONE_NEWIPC
+		case specs.NetworkNamespace:
+			cloneFlags |= syscall.CLONE_NEWNET
+		case specs.UserNamespace:
+			cloneFlags |= syscall.CLONE_NEWUSER
+		case specs.CgroupNamespace:
+			cloneFlags |= syscall.CLONE_NEWCGROUP
+		case specs.TimeNamespace:
+			cloneFlags |= syscall.CLONE_NEWTIME
+		}
 	}
 
-	Must(cmd.Start())
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Cloneflags: cloneFlags,
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		return fmt.Errorf("container: failed to create pipe: %w", err)
+	}
+	defer w.Close()
+
+	cmd.ExtraFiles = []*os.File{r}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("container: failed to start command: %w", err)
+	}
+
+	if err := json.NewEncoder(w).Encode(&spec); err != nil {
+		return fmt.Errorf("container: failed to encode spec: %w", err)
+	}
 
 	state.Pid = cmd.Process.Pid
 	state.Status = specs.StateCreated
-	saveState(state)
-}
 
-func Start(containerId string) error {
-	state, err := loadState(containerId)
-	if err != nil {
-		fmt.Printf("container : %v\n", err)
-		return fmt.Errorf("container : %v", err)
+	if err := saveState(state); err != nil {
+		return fmt.Errorf("container: failed to update state with PID: %w", err)
 	}
-	state.Status = specs.StateRunning
-	syscall.Kill(state.Pid, syscall.SIGCONT)
-	saveState(state)
+
 	return nil
 }
 
-func State(containerId string) (*specs.State, error) {
-	state, err := loadState(containerId)
+// Start starts the container with the given ID.
+func Start(containerID string) error {
+	state, err := loadState(containerID)
 	if err != nil {
-		fmt.Printf("container : %v\n", err)
-	}
-	return state, err
-}
-
-func Kill(containerId string, signal syscall.Signal) error {
-	state, err := loadState(containerId)
-	if err != nil {
-		fmt.Printf("container : %v\n", err)
+		return fmt.Errorf("container: failed to start container %s: %w", containerID, err)
 	}
 
-	return syscall.Kill(state.Pid, signal)
+	state.Status = specs.StateRunning
+
+	if err := syscall.Kill(state.Pid, syscall.SIGCONT); err != nil {
+		state.Status = specs.StateStopped
+		saveState(state)
+		return fmt.Errorf("container: failed to send SIGCONT to PID %d: %w", state.Pid, err)
+	}
+
+	if err := saveState(state); err != nil {
+		state.Status = specs.StateStopped
+		return fmt.Errorf("container: failed to start container %s: %w", containerID, err)
+	}
+
+	return nil
 }
 
+// State returns the current state of the container with the given ID.
+func State(containerID string) (*specs.State, error) {
+	state, err := loadState(containerID)
+	if err != nil {
+		return nil, err
+	}
+	return state, nil
+}
+
+// Kill stops and removes the container with the given ID.
+func Kill(containerID string, signal syscall.Signal) error {
+	state, err := loadState(containerID)
+	if err != nil {
+		return err
+	}
+
+	if err := syscall.Kill(state.Pid, signal); err != nil {
+		return fmt.Errorf("container: failed to send signal %d to container %s with PID %d: %w", signal, containerID, state.Pid, err)
+	}
+
+	return nil
+}
+
+// Init initializes the container environment.
 func Init() {
-	ch := make(chan os.Signal)
+	pipe := os.NewFile(3, "pipe")
+	if pipe == nil {
+		log.Fatalf("container: failed to create pipe")
+	}
+	defer pipe.Close()
+
+	var spec specs.Spec
+	if err := json.NewDecoder(pipe).Decode(&spec); err != nil {
+		log.Fatalf("container: failed to decode spec: %v", err)
+	}
+
+	ch := make(chan os.Signal, 1)
+
 	signal.Notify(ch, syscall.SIGCONT)
 	<-ch
 
-	fmt.Printf("Running: %v\n", os.Args[2:])
-
-	cgroup.SetupCgroups()
-
-	Must(syscall.Sethostname([]byte("container")))
-
-	const rootfs = "/root/ubuntufs"
-	Must(syscall.Chroot(rootfs))
-	Must(os.Chdir("/"))
-
-	Must(syscall.Mount("proc", "proc", "proc", 0, ""))
-	Must(syscall.Mount("tmpfs", "mytemp", "tmpfs", 0, ""))
-
-	defer Must(syscall.Unmount("proc", 0))
-	defer Must(syscall.Unmount("mytemp", 0))
-
-	if len(os.Args) < 3 {
-		log.Fatal("Usage: containeruntime")
-	}
-	syscall.Exec(os.Args[2], os.Args[3:], os.Environ())
-}
-
-func Delete(containerId string) error {
-	_ = Kill(containerId, syscall.SIGKILL)
-	for range 5 {
-		time.Sleep(1 * time.Second)
-		if err := Kill(containerId, 0); err != nil {
-			return deleteState(containerId)
+	if spec.Hostname != "" {
+		if err := syscall.Sethostname([]byte(spec.Hostname)); err != nil {
+			log.Fatalf("container: failed to set hostname: %v", err)
 		}
 	}
-	return errors.New("The container is still running")
+
+	rootfs := spec.Root.Path
+
+	if err := syscall.Mount(rootfs, rootfs, "", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
+		log.Fatalf("container: failed to bind mount rootfs: %v", err)
+	}
+
+	pivotDir := filepath.Join(rootfs, ".old_root")
+
+	if err := os.MkdirAll(pivotDir, 0755); err != nil {
+		log.Fatalf("container: failed to create pivot directory %s: %v", pivotDir, err)
+	}
+
+	if err := syscall.PivotRoot(rootfs, pivotDir); err != nil {
+		log.Fatalf("container: failed to pivot root to %s: %v", rootfs, err)
+	}
+
+	if err := os.Chdir("/"); err != nil {
+		log.Fatalf("container: failed to change directory to /: %v", err)
+	}
+
+	for _, m := range spec.Mounts {
+		if err := os.MkdirAll(m.Destination, 0755); err != nil {
+			log.Fatalf("container: failed to create mount destination %s: %v", m.Destination, err)
+		}
+
+		if err := syscall.Mount(m.Source, m.Destination, m.Type, 0, ""); err != nil {
+			log.Fatalf("container: failed to mount %s: %v", m.Destination, err)
+		}
+		defer func(dest string) {
+			if err := syscall.Unmount(dest, 0); err != nil {
+				log.Printf("container: failed to unmount %s: %v", dest, err)
+			}
+		}(m.Destination)
+	}
+
+	if err := syscall.Exec(spec.Process.Args[0], spec.Process.Args, os.Environ()); err != nil {
+		log.Fatalf("container: failed to exec command %s: %v", spec.Process.Args[0], err)
+	}
 }
 
-func Must(err error) {
+// Delete removes the container with the given ID.
+func Delete(containerID string) error {
+	err := Kill(containerID, syscall.SIGKILL)
 	if err != nil {
-		log.Fatalln(err)
+		return deleteState(containerID)
 	}
+	for range 5 {
+		time.Sleep(1 * time.Second)
+		if err := Kill(containerID, 0); err != nil {
+			return deleteState(containerID)
+		}
+	}
+	return fmt.Errorf("container: the container %s is stil running: %w", containerID, err)
+}
+
+// SetContainerState updates the state of the container with the given ID.
+func SetContainerState(containerID string, state *specs.State) error {
+	if err := saveState(state); err != nil {
+		return fmt.Errorf("container: failed to update state for container %s: %w", containerID, err)
+	}
+	return nil
 }
