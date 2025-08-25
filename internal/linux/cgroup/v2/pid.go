@@ -25,11 +25,3 @@ func (p *PidsSubSystem) Setup(path string) error {
 	}
 	return nil
 }
-
-func (p *PidsSubSystem) Clean(path string) error {
-	pidsMax := filepath.Join(path, "pids.max")
-	if err := os.WriteFile(pidsMax, []byte("max"), 0700); err != nil {
-		return fmt.Errorf("pids subsystem: failed to reset pids.max: %w", err)
-	}
-	return nil
-}
