@@ -2,12 +2,14 @@ package cgroup
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 )
 
 type PidsSubSystem struct {
-	MaxPids int64
+	MaxPids     int64
+	Current     int64
+	Peak        int64
+	Events      int64
+	EventsLocal int64
 }
 
 func NewPidsSubSystem(maxPids int64) *PidsSubSystem {
@@ -19,9 +21,19 @@ func (p *PidsSubSystem) Name() string {
 }
 
 func (p *PidsSubSystem) Setup(path string) error {
-	pidsMax := filepath.Join(path, "pids.max")
-	if err := os.WriteFile(pidsMax, []byte(fmt.Sprintf("%d", p.MaxPids)), 0700); err != nil {
-		return fmt.Errorf("pids subsystem: failed to set pids.max: %w", err)
+
+	files := []CgroupFile{
+		{"pids.max", fmt.Sprintf("%d", p.MaxPids)},
+		{"pids.current", fmt.Sprintf("%d", p.Current)},
+		{"pids.peak", fmt.Sprintf("%d", p.Peak)},
+		{"pids.events", fmt.Sprintf("%d", p.Events)},
+		{"pids.events.local", fmt.Sprintf("%d", p.EventsLocal)},
+	}
+
+	for _, f := range files {
+		if err := writeCgroupFile(path, f.Filename, f.Value); err != nil {
+			return fmt.Errorf("pids subsystem: failed to set %s: %w", f.Filename, err)
+		}
 	}
 	return nil
 }

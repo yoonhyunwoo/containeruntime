@@ -41,11 +41,8 @@ func (m *MemorySubSystem) Name() string {
 
 // Setup applies memory subsystem limits
 func (m *MemorySubSystem) Setup(path string) error {
-	type memFile struct {
-		name  string
-		value string
-	}
-	files := []memFile{
+
+	files := []CgroupFile{
 		{"memory.min", fmt.Sprintf("%d", m.Min)},
 		{"memory.low", fmt.Sprintf("%d", m.Low)},
 		{"memory.high", fmt.Sprintf("%d", m.High)},
@@ -60,8 +57,8 @@ func (m *MemorySubSystem) Setup(path string) error {
 	}
 
 	for _, f := range files {
-		if err := writeCgroupFile(path, f.name, f.value); err != nil {
-			return fmt.Errorf("memory subsystem: failed to set %s: %w", f.name, err)
+		if err := writeCgroupFile(path, f.Filename, f.Value); err != nil {
+			return fmt.Errorf("memory subsystem: failed to set %s: %w", f.Filename, err)
 		}
 	}
 	return nil

@@ -19,6 +19,12 @@ type SubSystem interface {
 	Setup(path string) error
 }
 
+// CgroupFile represents a cgroup file and the value to be written to it.
+type CgroupFile struct {
+	Filename string
+	Value    string
+}
+
 // NewCgroupManager creates a new CgroupManager for a given container name.
 func NewCgroupManager(containerName string, subsystems []SubSystem) *CgroupManager {
 	return &CgroupManager{
