@@ -2,8 +2,6 @@ package cgroup
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 )
 
 // CpuSubSystem is a struct that holds settings and statistics for the CPU controller in cgroup v2.
@@ -43,23 +41,19 @@ func (c *CpuSubSystem) Name() string {
 }
 
 func (c *CpuSubSystem) Setup(path string) error {
-	cpuWeight := filepath.Join(path, "cpu.weight")
-	cpuMax := filepath.Join(path, "cpu.max")
-	cpuMaxBurst := filepath.Join(path, "cpu.max.burst")
-	cpuIdle := filepath.Join(path, "cpu.idle")
 
-	os.WriteFile(cpuWeight, []byte(fmt.Sprintf("%d", c.Weight)), 0700)
-	os.WriteFile(cpuMax, []byte(fmt.Sprintf("%d %d", c.Quota, c.Period)), 0700)
-	os.WriteFile(cpuMaxBurst, []byte(fmt.Sprintf("%d", c.MaxBurst)), 0700)
-	os.WriteFile(cpuIdle, []byte(fmt.Sprintf("%d", c.Idle)), 0700)
-
-	return nil
-}
-
-func (c *CpuSubSystem) Clean(path string) error {
-	pidsMax := filepath.Join(path, "pids.max")
-	if err := os.WriteFile(pidsMax, []byte("max"), 0700); err != nil {
-		return fmt.Errorf("pids subsystem: failed to reset pids.max: %w", err)
+	files := []CgroupFile{
+		{"cpu.weight", fmt.Sprintf("%d", c.Weight)},
+		{"cpu.max", fmt.Sprintf("%d %d", c.Quota, c.Period)},
+		{"cpu.max.burst", fmt.Sprintf("%d", c.MaxBurst)},
+		{"cpu.idle", fmt.Sprintf("%d", c.Idle)},
 	}
+
+	for _, f := range files {
+		if err := writeCgroupFile(path, f.Filename, f.Value); err != nil {
+			return fmt.Errorf("cpu subsystem: failed to set %s: %w", f.Filename, err)
+		}
+	}
+
 	return nil
 }

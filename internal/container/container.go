@@ -37,19 +37,7 @@ func Create(containerID, bundlePath string) error {
 		return fmt.Errorf("container: failed to save initial state: %w", err)
 	}
 
-	cgroupManager := cgroup.NewCgroupManager(containerID, []cgroup.SubSystem{
-		&cgroup.MemorySubSystem{Limit: *spec.Linux.Resources.Memory.Limit},
-		&cgroup.PidsSubSystem{MaxPids: spec.Linux.Resources.Pids.Limit},
-		&cgroup.CpuSubSystem{
-			Quota:    *spec.Linux.Resources.CPU.Quota,
-			Period:   *spec.Linux.Resources.CPU.Period,
-			Weight:   *spec.Linux.Resources.CPU.Shares,
-			MaxBurst: *spec.Linux.Resources.CPU.Burst,
-			Idle:     *spec.Linux.Resources.CPU.Idle,
-		},
-	})
-
-	cgroupManager.Setup()
+	cgroup.SetupCgroups()
 
 	selfExe, err := os.Executable()
 	if err != nil {
