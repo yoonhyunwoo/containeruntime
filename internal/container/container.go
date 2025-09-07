@@ -3,6 +3,7 @@ package container
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -12,8 +13,10 @@ import (
 	"time"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/term"
 
 	"github.com/yoonhyunwoo/containeruntime/internal/linux/cgroup/v2"
+	"github.com/yoonhyunwoo/containeruntime/internal/linux/pty"
 )
 
 // Create initializes a new container with the given ID and root filesystem path.
@@ -36,8 +39,15 @@ func Create(containerID, bundlePath string) error {
 	if err := saveState(state); err != nil {
 		return fmt.Errorf("container: failed to save initial state: %w", err)
 	}
-
-	cgroup.SetupCgroups()
+	cgroupSubSystems, err := createCgroupSubSystems(spec)
+	if err != nil {
+		return fmt.Errorf("container: failed to create cgroup subsystems: %w", err)
+	}
+	cgroupManager := cgroup.NewCgroupManager(containerID, cgroupSubSystems)
+	cgroupManager.Setup()
+	if err := cgroupManager.Setup(); err != nil {
+		return fmt.Errorf("container: failed to setup cgroups: %w", err)
+	}
 
 	selfExe, err := os.Executable()
 	if err != nil {
@@ -45,9 +55,6 @@ func Create(containerID, bundlePath string) error {
 	}
 
 	cmd := exec.Command(selfExe, append([]string{"init"}, spec.Process.Args...)...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 
 	var cloneFlags uintptr
 	for _, ns := range spec.Linux.Namespaces {
@@ -73,6 +80,8 @@ func Create(containerID, bundlePath string) error {
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: cloneFlags,
+		Setsid:     spec.Process.Terminal,
+		Setctty:    spec.Process.Terminal,
 	}
 
 	r, w, err := os.Pipe()
@@ -83,8 +92,44 @@ func Create(containerID, bundlePath string) error {
 
 	cmd.ExtraFiles = []*os.File{r}
 
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("container: failed to start command: %w", err)
+	if spec.Process.Terminal {
+		ptmx, slavePath, err := pty.NewPty()
+		if err != nil {
+			return fmt.Errorf("container: failed to create pty: %w", err)
+		}
+		defer ptmx.Close()
+
+		slave, err := os.OpenFile(slavePath, os.O_RDWR|syscall.O_NOCTTY, 0)
+		if err != nil {
+			return fmt.Errorf("container: failed to open slave pty: %w", err)
+		}
+		defer slave.Close()
+
+		cmd.Stdin = slave
+		cmd.Stdout = slave
+		cmd.Stderr = slave
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("container: failed to start command: %w", err)
+		}
+
+		oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+		if err != nil {
+			return fmt.Errorf("container: failed to set terminal to raw mode: %w", err)
+		}
+		defer term.Restore(int(os.Stdin.Fd()), oldState)
+		go pty.HandleResize(ptmx)
+		pty.HandleResize(ptmx)
+
+		go io.Copy(ptmx, os.Stdin)
+		io.Copy(os.Stdout, ptmx)
+		cmd.Wait()
+	} else {
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("container: failed to start command: %w", err)
+		}
 	}
 
 	if err := json.NewEncoder(w).Encode(&spec); err != nil {
@@ -191,6 +236,14 @@ func Init() {
 		log.Fatalf("container: failed to change directory to /: %v", err)
 	}
 
+	if err := syscall.Unmount("/.old_root", syscall.MNT_DETACH); err != nil {
+		log.Fatalf("container: failed to unmount old root: %v", err)
+	}
+
+	if err := os.RemoveAll("/.old_root"); err != nil {
+		log.Fatalf("container: failed to remove old root directory: %v", err)
+	}
+
 	for _, m := range spec.Mounts {
 		if err := os.MkdirAll(m.Destination, 0755); err != nil {
 			log.Fatalf("container: failed to create mount destination %s: %v", m.Destination, err)
@@ -224,12 +277,4 @@ func Delete(containerID string) error {
 		}
 	}
 	return fmt.Errorf("container: the container %s is stil running: %w", containerID, err)
-}
-
-// SetContainerState updates the state of the container with the given ID.
-func SetContainerState(containerID string, state *specs.State) error {
-	if err := saveState(state); err != nil {
-		return fmt.Errorf("container: failed to update state for container %s: %w", containerID, err)
-	}
-	return nil
 }

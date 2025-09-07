@@ -106,3 +106,10 @@ func newContainerState(id, bundlePath string) *specs.State {
 	}
 	return state
 }
+
+func SetContainerState(containerID string, state *specs.State) error {
+	if err := saveState(state); err != nil {
+		return fmt.Errorf("container: failed to update state for container %s: %w", containerID, err)
+	}
+	return nil
+}
