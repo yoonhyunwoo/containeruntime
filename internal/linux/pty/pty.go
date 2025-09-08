@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 	"golang.org/x/term"
@@ -32,9 +33,16 @@ func NewPty() (master *os.File, slavePath string, err error) {
 
 func ptyUnlock(f *os.File) error {
 	var unlock int = 0
-	fmt.Printf("[DEBUG] %d\n", unlock)
-	fmt.Printf("[DEBUG] %d\n", uintptr(unlock))
-	return unix.IoctlSetInt(int(f.Fd()), unix.TIOCSPTLCK, unlock)
+	_, _, errno := unix.Syscall(
+		unix.SYS_IOCTL,
+		uintptr(f.Fd()),
+		uintptr(unix.TIOCSPTLCK),
+		uintptr(unsafe.Pointer(&unlock)),
+	)
+	if errno != 0 {
+		return errno
+	}
+	return nil
 }
 
 func ptySlaveName(f *os.File) (string, error) {

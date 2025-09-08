@@ -3,7 +3,6 @@ package container
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -13,10 +12,8 @@ import (
 	"time"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
-	"golang.org/x/term"
 
 	"github.com/yoonhyunwoo/containeruntime/internal/linux/cgroup/v2"
-	"github.com/yoonhyunwoo/containeruntime/internal/linux/pty"
 )
 
 // Create initializes a new container with the given ID and root filesystem path.
@@ -93,36 +90,8 @@ func Create(containerID, bundlePath string) error {
 	cmd.ExtraFiles = []*os.File{r}
 
 	if spec.Process.Terminal {
-		ptmx, slavePath, err := pty.NewPty()
-		if err != nil {
-			return fmt.Errorf("container: failed to create pty: %w", err)
-		}
-		defer ptmx.Close()
-
-		slave, err := os.OpenFile(slavePath, os.O_RDWR|syscall.O_NOCTTY, 0)
-		if err != nil {
-			return fmt.Errorf("container: failed to open slave pty: %w", err)
-		}
-		defer slave.Close()
-
-		cmd.Stdin = slave
-		cmd.Stdout = slave
-		cmd.Stderr = slave
-		if err := cmd.Start(); err != nil {
-			return fmt.Errorf("container: failed to start command: %w", err)
-		}
-
-		oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-		if err != nil {
-			return fmt.Errorf("container: failed to set terminal to raw mode: %w", err)
-		}
-		defer term.Restore(int(os.Stdin.Fd()), oldState)
-		go pty.HandleResize(ptmx)
-		pty.HandleResize(ptmx)
-
-		go io.Copy(ptmx, os.Stdin)
-		io.Copy(os.Stdout, ptmx)
-		cmd.Wait()
+		//  TODO : pty implementation
+		return fmt.Errorf("container: terminal mode is not supported yet")
 	} else {
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -217,6 +186,11 @@ func Init() {
 	}
 
 	rootfs := spec.Root.Path
+
+	err := syscall.Mount("", "/", "", syscall.MS_REC|syscall.MS_PRIVATE, "")
+	if err != nil {
+		log.Fatalf("container: failed to remount / as private: %v", err)
+	}
 
 	if err := syscall.Mount(rootfs, rootfs, "", syscall.MS_BIND|syscall.MS_REC, ""); err != nil {
 		log.Fatalf("container: failed to bind mount rootfs: %v", err)
