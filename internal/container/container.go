@@ -14,6 +14,7 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 
 	"github.com/yoonhyunwoo/containeruntime/internal/linux/cgroup/v2"
+	"github.com/yoonhyunwoo/containeruntime/internal/linux/pty"
 )
 
 // Create initializes a new container with the given ID and root filesystem path.
@@ -90,7 +91,24 @@ func Create(containerID, bundlePath string) error {
 	cmd.ExtraFiles = []*os.File{r}
 
 	if spec.Process.Terminal {
-		//  TODO : pty implementation
+		master, slave, err := pty.PtyPair()
+		if err != nil {
+			return fmt.Errorf("container: failed to create pty pair: %w", err)
+		}
+		cmd.Stdin = slave
+		cmd.Stdout = slave
+		cmd.Stderr = slave
+		cmd.SysProcAttr.Setctty = true
+		cmd.SysProcAttr.Setsid = true
+		state.Annotations = map[string]string{
+			"containeruntime/pty-master": fmt.Sprintf("%d", master.Fd()),
+			"containeruntime/pty-slave":  slave.Name(),
+		}
+
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("container: failed to start command: %w", err)
+		}
+
 		return fmt.Errorf("container: terminal mode is not supported yet")
 	} else {
 		cmd.Stdin = os.Stdin
