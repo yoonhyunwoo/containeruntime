@@ -37,10 +37,7 @@ func Create(containerID, bundlePath string) error {
 	if err := saveState(state); err != nil {
 		return fmt.Errorf("container: failed to save initial state: %w", err)
 	}
-	cgroupSubSystems, err := createCgroupSubSystems(spec)
-	if err != nil {
-		return fmt.Errorf("container: failed to create cgroup subsystems: %w", err)
-	}
+	cgroupSubSystems := createCgroupSubSystems(spec)
 	cgroupManager := cgroup.NewCgroupManager(containerID, cgroupSubSystems)
 	cgroupManager.Setup()
 	if err := cgroupManager.Setup(); err != nil {
