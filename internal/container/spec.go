@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
+
 	"github.com/yoonhyunwoo/containeruntime/internal/linux/cgroup/v2"
 )
 
@@ -17,18 +18,18 @@ func loadSpec(specPath string) (*specs.Spec, error) {
 	}
 	defer f.Close()
 
-	if err := json.NewDecoder(f).Decode(&spec); err != nil {
+	err = json.NewDecoder(f).Decode(&spec)
+	if err != nil {
 		return nil, fmt.Errorf("container: failed to decode spec JSON from %s: %w", specPath, err)
 	}
 
 	return &spec, nil
-
 }
 
-func createCgroupSubSystems(spec *specs.Spec) ([]cgroup.SubSystem, error) {
+func createCgroupSubSystems(spec *specs.Spec) []cgroup.SubSystem {
 	var subSystems []cgroup.SubSystem
 	if spec.Linux == nil || spec.Linux.Resources == nil {
-		return nil, nil
+		return nil
 	}
 	if spec.Linux.Resources.Memory != nil {
 		mem := spec.Linux.Resources.Memory
@@ -47,7 +48,7 @@ func createCgroupSubSystems(spec *specs.Spec) ([]cgroup.SubSystem, error) {
 
 	if spec.Linux.Resources.CPU != nil {
 		cpu := spec.Linux.Resources.CPU
-		cpuSubSys := &cgroup.CpuSubSystem{
+		cpuSubSys := &cgroup.CPUSubSystem{
 			Quota:    *cpu.Quota,
 			Period:   *cpu.Period,
 			Idle:     *cpu.Idle,
@@ -89,8 +90,7 @@ func createCgroupSubSystems(spec *specs.Spec) ([]cgroup.SubSystem, error) {
 			}
 			subSystems = append(subSystems, hugepageSubSys)
 		}
-
 	}
 
-	return subSystems, nil
+	return subSystems
 }

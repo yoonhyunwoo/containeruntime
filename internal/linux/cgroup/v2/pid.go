@@ -2,6 +2,7 @@ package cgroup
 
 import (
 	"fmt"
+	"strconv"
 )
 
 type PidsSubSystem struct {
@@ -21,13 +22,12 @@ func (p *PidsSubSystem) Name() string {
 }
 
 func (p *PidsSubSystem) Setup(path string) error {
-
 	files := []CgroupFile{
-		{"pids.max", fmt.Sprintf("%d", p.MaxPids)},
-		{"pids.current", fmt.Sprintf("%d", p.Current)},
-		{"pids.peak", fmt.Sprintf("%d", p.Peak)},
-		{"pids.events", fmt.Sprintf("%d", p.Events)},
-		{"pids.events.local", fmt.Sprintf("%d", p.EventsLocal)},
+		{"pids.max", strconv.FormatInt(p.MaxPids, 10)},
+		{"pids.current", strconv.FormatInt(p.Current, 10)},
+		{"pids.peak", strconv.FormatInt(p.Peak, 10)},
+		{"pids.events", strconv.FormatInt(p.Events, 10)},
+		{"pids.events.local", strconv.FormatInt(p.EventsLocal, 10)},
 	}
 
 	for _, f := range files {

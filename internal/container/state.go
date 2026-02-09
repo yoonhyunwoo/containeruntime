@@ -5,19 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
-var (
-	containeruntimeStateDir string = "/run/containeruntime"
-)
+const containeruntimeStateDir = "/run/containeruntime"
 
 // InitStateDir initializes the state directory for container runtime.
 func InitStateDir() error {
 	if err := os.MkdirAll(containeruntimeStateDir, 0755); err != nil {
-		return fmt.Errorf("container: failed to create state directory: %v", err)
+		return fmt.Errorf("container: failed to create state directory: %w", err)
 	}
 	return nil
 }
@@ -37,11 +34,15 @@ func saveState(state *specs.State) error {
 	defer f.Close()
 	defer os.Remove(tempPath)
 
-	if err := json.NewEncoder(f).Encode(state); err != nil {
-		return fmt.Errorf("container: failed to encode state to JSON: %w", err)
+	encodeErr := json.NewEncoder(f).Encode(state)
+	if encodeErr != nil {
+		return fmt.Errorf("container: failed to encode state to JSON: %w", encodeErr)
 	}
 
-	f.Close()
+	closeErr := f.Close()
+	if closeErr != nil {
+		return fmt.Errorf("container: failed to close temporary state file: %w", closeErr)
+	}
 
 	if err = os.Rename(tempPath, statePath); err != nil {
 		return fmt.Errorf("container: failed to rename temporary file: %w", err)
@@ -72,27 +73,6 @@ func deleteState(containerID string) error {
 		return fmt.Errorf("container: failed to delete state file for container %s: %w", containerID, err)
 	}
 	return nil
-}
-
-func listState(containerID string) ([]*specs.State, error) {
-	var states []*specs.State
-	files, err := os.ReadDir(containeruntimeStateDir)
-	if err != nil {
-		return nil, fmt.Errorf("container: failed to list states in directory %s: %w", containeruntimeStateDir, err)
-	}
-
-	for _, file := range files {
-		if strings.HasSuffix(file.Name(), ".json") {
-			containerID := strings.TrimSuffix(file.Name(), ".json")
-			state, err := loadState(containerID)
-			if err != nil {
-				continue
-			}
-			states = append(states, state)
-		}
-	}
-
-	return states, nil
 }
 
 func newContainerState(id, bundlePath string) *specs.State {

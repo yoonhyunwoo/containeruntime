@@ -2,9 +2,10 @@ package cgroup
 
 import (
 	"fmt"
+	"strconv"
 )
 
-// memory subsystem with configurable limit
+// MemorySubSystem defines configurable memory limits.
 type MemorySubSystem struct {
 	Min            int64
 	Low            int64
@@ -19,12 +20,12 @@ type MemorySubSystem struct {
 	ZswapWriteback int64
 }
 
-func NewMemorySubSystem(min, low, high, max, peak, oomGroup, swapHigh, swapPeak, swapMax, zswapMax, zswapWriteback int64) *MemorySubSystem {
+func NewMemorySubSystem(minVal, low, high, maxVal, peak, oomGroup, swapHigh, swapPeak, swapMax, zswapMax, zswapWriteback int64) *MemorySubSystem {
 	return &MemorySubSystem{
-		Min:            min,
+		Min:            minVal,
 		Low:            low,
 		High:           high,
-		Max:            max,
+		Max:            maxVal,
 		Peak:           peak,
 		OOMGroup:       oomGroup,
 		SwapHigh:       swapHigh,
@@ -39,21 +40,20 @@ func (m *MemorySubSystem) Name() string {
 	return "memory"
 }
 
-// Setup applies memory subsystem limits
+// Setup applies memory subsystem limits.
 func (m *MemorySubSystem) Setup(path string) error {
-
 	files := []CgroupFile{
-		{"memory.min", fmt.Sprintf("%d", m.Min)},
-		{"memory.low", fmt.Sprintf("%d", m.Low)},
-		{"memory.high", fmt.Sprintf("%d", m.High)},
-		{"memory.max", fmt.Sprintf("%d", m.Max)},
-		{"memory.peak", fmt.Sprintf("%d", m.Peak)},
-		{"memory.oom.group", fmt.Sprintf("%d", m.OOMGroup)},
-		{"memory.swap.high", fmt.Sprintf("%d", m.SwapHigh)},
-		{"memory.swap.peak", fmt.Sprintf("%d", m.SwapPeak)},
-		{"memory.swap.max", fmt.Sprintf("%d", m.SwapMax)},
-		{"memory.zswap.max", fmt.Sprintf("%d", m.ZswapMax)},
-		{"memory.zswap.writeback", fmt.Sprintf("%d", m.ZswapWriteback)},
+		{"memory.min", strconv.FormatInt(m.Min, 10)},
+		{"memory.low", strconv.FormatInt(m.Low, 10)},
+		{"memory.high", strconv.FormatInt(m.High, 10)},
+		{"memory.max", strconv.FormatInt(m.Max, 10)},
+		{"memory.peak", strconv.FormatInt(m.Peak, 10)},
+		{"memory.oom.group", strconv.FormatInt(m.OOMGroup, 10)},
+		{"memory.swap.high", strconv.FormatInt(m.SwapHigh, 10)},
+		{"memory.swap.peak", strconv.FormatInt(m.SwapPeak, 10)},
+		{"memory.swap.max", strconv.FormatInt(m.SwapMax, 10)},
+		{"memory.zswap.max", strconv.FormatInt(m.ZswapMax, 10)},
+		{"memory.zswap.writeback", strconv.FormatInt(m.ZswapWriteback, 10)},
 	}
 
 	for _, f := range files {
