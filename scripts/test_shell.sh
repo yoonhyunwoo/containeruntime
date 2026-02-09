@@ -11,6 +11,20 @@ ROOTFS_PATH="${ROOTFS_PATH:-/root/testbundle/ubuntufs}"
 CONTAINER_ID="shell-$(date +%s)"
 LOG_FILE="${LOG_FILE:-/tmp/containeruntime-shell.log}"
 
+delete_with_retry() {
+  local i
+  for i in 1 2 3 4 5; do
+    if "${RUNTIME}" delete "${CONTAINER_ID}" >/dev/null 2>&1; then
+      return 0
+    fi
+    if ! "${RUNTIME}" state "${CONTAINER_ID}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 if [[ ! -x "${RUNTIME}" ]]; then
   echo "runtime binary not found: ${RUNTIME}" >&2
   exit 1
@@ -23,7 +37,7 @@ if [[ ! -d "${ROOTFS_PATH}" ]]; then
 fi
 
 best_effort_delete() {
-  ("${RUNTIME}" delete "${CONTAINER_ID}" >/dev/null 2>&1 || true) &
+  (delete_with_retry || true) &
 }
 
 cat > "${BUNDLE_DIR}/config.json" <<JSON
@@ -63,12 +77,6 @@ timeout 10 "${RUNTIME}" create "${CONTAINER_ID}" "${BUNDLE_DIR}" >"${LOG_FILE}" 
 rc=$?
 set -e
 
-if [[ ${rc} -eq 0 ]]; then
-  best_effort_delete
-  echo "shell test passed: terminal mode create succeeded (${CONTAINER_ID})"
-  exit 0
-fi
-
 if grep -Eq "terminal mode is not supported yet|failed to create pty pair|function not implemented" "${LOG_FILE}"; then
   best_effort_delete
   echo "shell test skipped: terminal mode/pty not available in current runtime environment"
@@ -81,7 +89,31 @@ if [[ ${rc} -eq 124 ]]; then
   exit 0
 fi
 
-best_effort_delete
-echo "shell test failed: unexpected create error" >&2
-cat "${LOG_FILE}" >&2
-exit 1
+if [[ ${rc} -ne 0 ]]; then
+  best_effort_delete
+  echo "shell test failed: create returned non-zero exit status" >&2
+  cat "${LOG_FILE}" >&2
+  exit 1
+fi
+
+state_created="$(${RUNTIME} state "${CONTAINER_ID}")"
+printf '%s\n' "${state_created}" | grep -q '"status": "created"'
+
+"${RUNTIME}" start "${CONTAINER_ID}"
+sleep 1
+
+state_after_start="$(${RUNTIME} state "${CONTAINER_ID}")"
+printf '%s\n' "${state_after_start}" | grep -Eq '"status": "(running|stopped)"'
+
+if ! delete_with_retry; then
+  echo "shell test failed: delete did not succeed after retries" >&2
+  exit 1
+fi
+
+if "${RUNTIME}" state "${CONTAINER_ID}" >/dev/null 2>&1; then
+  echo "shell test failed: state still exists after delete (${CONTAINER_ID})" >&2
+  exit 1
+fi
+
+echo "shell test passed: terminal lifecycle create/start/delete succeeded (${CONTAINER_ID})"
+exit 0
