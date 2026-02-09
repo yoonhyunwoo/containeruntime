@@ -3,12 +3,15 @@ package container
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -110,6 +113,10 @@ func Create(containerID, bundlePath string) error {
 		defer master.Close()
 		defer slave.Close()
 
+		// Keep a copy of the pty master in the child process so `start` can
+		// attach via /proc/<pid>/fd/<n> when invoked from a real terminal.
+		cmd.ExtraFiles = append(cmd.ExtraFiles, master)
+
 		if resizeErr := linuxtty.SyncWinsizeFromTerminal(int(os.Stdin.Fd()), int(slave.Fd())); resizeErr != nil {
 			return resizeErr
 		}
@@ -138,8 +145,9 @@ func Create(containerID, bundlePath string) error {
 		cmd.SysProcAttr.Setctty = true
 		cmd.SysProcAttr.Setsid = true
 		state.Annotations = map[string]string{
-			"containeruntime/pty-master": fmt.Sprintf("%d", master.Fd()),
-			"containeruntime/pty-slave":  slave.Name(),
+			"containeruntime/pty-master-fd": strconv.Itoa(3 + len(cmd.ExtraFiles) - 1),
+			"containeruntime/pty-master":    fmt.Sprintf("%d", master.Fd()),
+			"containeruntime/pty-slave":     slave.Name(),
 		}
 
 		startErr := cmd.Start()
@@ -194,7 +202,92 @@ func Start(containerID string) error {
 		return fmt.Errorf("container: failed to start container %s: %w", containerID, saveErr)
 	}
 
+	if shouldAttachTerminal(state) {
+		if attachErr := attachTerminal(state); attachErr != nil {
+			return attachErr
+		}
+	}
+
 	return nil
+}
+
+func shouldAttachTerminal(state *specs.State) bool {
+	if state == nil || state.Annotations == nil {
+		return false
+	}
+	_, hasMasterFD := state.Annotations["containeruntime/pty-master-fd"]
+	return hasMasterFD
+}
+
+func attachTerminal(state *specs.State) error {
+	if !linuxtty.IsTerminal(int(os.Stdin.Fd())) || !linuxtty.IsTerminal(int(os.Stdout.Fd())) {
+		return nil
+	}
+
+	masterFD := state.Annotations["containeruntime/pty-master-fd"]
+	masterPath := fmt.Sprintf("/proc/%d/fd/%s", state.Pid, masterFD)
+	master, err := os.OpenFile(masterPath, os.O_RDWR, 0)
+	if err != nil {
+		return fmt.Errorf("container: failed to open terminal attach path %s: %w", masterPath, err)
+	}
+	defer master.Close()
+
+	restoreTerminal, rawErr := linuxtty.EnterRawMode(int(os.Stdin.Fd()))
+	if rawErr != nil {
+		return rawErr
+	}
+	defer func() {
+		if err := restoreTerminal(); err != nil {
+			log.Printf("container: failed to restore terminal mode: %v", err)
+		}
+	}()
+
+	if resizeErr := linuxtty.SyncWinsizeFromTerminal(int(os.Stdin.Fd()), int(master.Fd())); resizeErr != nil {
+		return resizeErr
+	}
+
+	resizeSignal := make(chan os.Signal, 1)
+	signal.Notify(resizeSignal, syscall.SIGWINCH)
+	defer signal.Stop(resizeSignal)
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case <-resizeSignal:
+				if err := linuxtty.SyncWinsizeFromTerminal(int(os.Stdin.Fd()), int(master.Fd())); err != nil {
+					log.Printf("container: failed to sync terminal size: %v", err)
+				}
+			}
+		}
+	}()
+
+	inputErrCh := make(chan error, 1)
+	go func() {
+		_, copyErr := io.Copy(master, os.Stdin)
+		inputErrCh <- copyErr
+	}()
+
+	_, outputErr := io.Copy(os.Stdout, master)
+	inputErr := <-inputErrCh
+
+	if !isIgnorableAttachErr(outputErr) {
+		return fmt.Errorf("container: terminal output bridge failed: %w", outputErr)
+	}
+	if !isIgnorableAttachErr(inputErr) {
+		return fmt.Errorf("container: terminal input bridge failed: %w", inputErr)
+	}
+
+	return nil
+}
+
+func isIgnorableAttachErr(err error) bool {
+	if err == nil {
+		return true
+	}
+	return errors.Is(err, io.EOF) || errors.Is(err, os.ErrClosed) || errors.Is(err, syscall.EIO)
 }
 
 // State returns the current state of the container with the given ID.
