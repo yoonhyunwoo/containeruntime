@@ -13,7 +13,7 @@ const containeruntimeStateDir = "/run/containeruntime"
 
 // InitStateDir initializes the state directory for container runtime.
 func InitStateDir() error {
-	if err := os.MkdirAll(containeruntimeStateDir, 0755); err != nil {
+	if err := os.MkdirAll(containeruntimeStateDir, 0o750); err != nil {
 		return fmt.Errorf("container: failed to create state directory: %w", err)
 	}
 	return nil

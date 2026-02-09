@@ -14,6 +14,7 @@ func PtyPair() (masterPty, slavePty *os.File, err error) {
 	}
 
 	var ptn uint32
+	// #nosec G103 -- ioctl TIOCGPTN requires pointer passing to kernel for PTY index retrieval.
 	if _, _, errno := syscall.Syscall(syscall.TIOCGPTN, masterPty.Fd(), uintptr(unsafe.Pointer(&ptn)), 0); errno != 0 {
 		_ = masterPty.Close()
 		return nil, nil, fmt.Errorf("pty: failed to get slave pty number: %w", errno)

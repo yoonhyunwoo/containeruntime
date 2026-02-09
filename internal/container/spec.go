@@ -84,8 +84,8 @@ func createCgroupSubSystems(spec *specs.Spec) []cgroup.SubSystem {
 	if spec.Linux.Resources.HugepageLimits != nil {
 		for _, hugepage := range spec.Linux.Resources.HugepageLimits {
 			hugepageSubSys := &cgroup.HugepageSubSystem{
-				Pages: map[string]int64{
-					hugepage.Pagesize: int64(hugepage.Limit),
+				Pages: map[string]uint64{
+					hugepage.Pagesize: hugepage.Limit,
 				},
 			}
 			subSystems = append(subSystems, hugepageSubSys)
