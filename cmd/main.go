@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -20,10 +21,10 @@ var (
 		Name:      "create",
 		Usage:     "This command creates a new container. You must provide a unique container ID and the path to the bundle containing the container's configuration.",
 		ArgsUsage: "<container-id> <path-to-bundle>",
-		Action: func(ctx context.Context, command *cli.Command) error {
+		Action: func(_ context.Context, command *cli.Command) error {
 
 			if command.Args().Len() != 2 {
-				return fmt.Errorf("main: container-id and path-to-bundle are required")
+				return errors.New("main: container-id and path-to-bundle are required")
 			}
 
 			containerID := command.Args().Get(0)
@@ -46,9 +47,9 @@ var (
 		Name:      "delete",
 		Usage:     "This command deletes a container and its associated resources.",
 		ArgsUsage: "<container-id>",
-		Action: func(ctx context.Context, command *cli.Command) error {
+		Action: func(_ context.Context, command *cli.Command) error {
 			if command.Args().Len() != 1 {
-				return fmt.Errorf("main: container-id is required")
+				return errors.New("main: container-id is required")
 			}
 
 			containerID := command.Args().First()
@@ -65,7 +66,7 @@ var (
 
 	initCommand = &cli.Command{
 		Name: "init",
-		Action: func(ctx context.Context, command *cli.Command) error {
+		Action: func(_ context.Context, command *cli.Command) error {
 			container.Init()
 			return nil
 		},
@@ -75,9 +76,9 @@ var (
 		Name:      "kill",
 		Usage:     "This command sends a specific signal to the main process of a container.",
 		ArgsUsage: "<containeriD> <signal>",
-		Action: func(ctx context.Context, command *cli.Command) error {
+		Action: func(_ context.Context, command *cli.Command) error {
 			if command.Args().Len() != 2 {
-				return fmt.Errorf("main: container ID and signal number are required")
+				return errors.New("main: container ID and signal number are required")
 			}
 
 			containerID := command.Args().First()
@@ -109,9 +110,9 @@ var (
 		Name:      "start",
 		Usage:     "This command starts a previously created container. It runs the user-specified program defined in the container's configuration.",
 		ArgsUsage: "<container-id>",
-		Action: func(ctx context.Context, command *cli.Command) error {
+		Action: func(_ context.Context, command *cli.Command) error {
 			if command.Args().Len() != 1 {
-				return fmt.Errorf("main: container ID is required")
+				return errors.New("main: container ID is required")
 			}
 
 			containerID := command.Args().First()
@@ -127,9 +128,9 @@ var (
 		Name:      "state",
 		Usage:     "This command returns the current state of a container.",
 		ArgsUsage: "<container-id>",
-		Action: func(ctx context.Context, command *cli.Command) error {
+		Action: func(_ context.Context, command *cli.Command) error {
 			if command.Args().Len() != 1 {
-				return fmt.Errorf("main: container ID is required")
+				return errors.New("main: container ID is required")
 			}
 
 			containerID := command.Args().First()
@@ -150,7 +151,7 @@ var (
 			if err != nil {
 				return fmt.Errorf("main: failed to marshal container state to JSON: %w", err)
 			}
-			os.Stdout.Write(containerStateBytes)
+			_, _ = os.Stdout.Write(containerStateBytes)
 			return nil
 		},
 	}
