@@ -2,6 +2,7 @@ package container
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -19,34 +20,36 @@ import (
 
 // Create initializes a new container with the given ID and root filesystem path.
 func Create(containerID, bundlePath string) error {
-
-	bundlePath, err := filepath.Abs(bundlePath)
-	if err != nil {
-		return fmt.Errorf("container: failed to get absolute path for bundle: %w", err)
+	absBundlePath, absErr := filepath.Abs(bundlePath)
+	if absErr != nil {
+		return fmt.Errorf("container: failed to get absolute path for bundle: %w", absErr)
 	}
+	bundlePath = absBundlePath
 
 	configPath := filepath.Join(bundlePath, "config.json")
 
 	state := newContainerState(containerID, bundlePath)
 
-	spec, err := loadSpec(configPath)
-	if err != nil {
-		return err
+	spec, specErr := loadSpec(configPath)
+	if specErr != nil {
+		return specErr
 	}
 
-	if err := saveState(state); err != nil {
-		return fmt.Errorf("container: failed to save initial state: %w", err)
+	saveErr := saveState(state)
+	if saveErr != nil {
+		return fmt.Errorf("container: failed to save initial state: %w", saveErr)
 	}
 	cgroupSubSystems := createCgroupSubSystems(spec)
 	cgroupManager := cgroup.NewCgroupManager(containerID, cgroupSubSystems)
-	cgroupManager.Setup()
-	if err := cgroupManager.Setup(); err != nil {
-		return fmt.Errorf("container: failed to setup cgroups: %w", err)
+	_ = cgroupManager.Setup()
+	setupErr := cgroupManager.Setup()
+	if setupErr != nil {
+		return fmt.Errorf("container: failed to setup cgroups: %w", setupErr)
 	}
 
-	selfExe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("container: failed to get executable path: %w", err)
+	selfExe, exeErr := os.Executable()
+	if exeErr != nil {
+		return fmt.Errorf("container: failed to get executable path: %w", exeErr)
 	}
 
 	cmd := exec.Command(selfExe, append([]string{"init"}, spec.Process.Args...)...)
@@ -79,18 +82,18 @@ func Create(containerID, bundlePath string) error {
 		Setctty:    spec.Process.Terminal,
 	}
 
-	r, w, err := os.Pipe()
-	if err != nil {
-		return fmt.Errorf("container: failed to create pipe: %w", err)
+	r, w, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		return fmt.Errorf("container: failed to create pipe: %w", pipeErr)
 	}
 	defer w.Close()
 
 	cmd.ExtraFiles = []*os.File{r}
 
 	if spec.Process.Terminal {
-		master, slave, err := pty.PtyPair()
-		if err != nil {
-			return fmt.Errorf("container: failed to create pty pair: %w", err)
+		master, slave, ptyErr := pty.PtyPair()
+		if ptyErr != nil {
+			return fmt.Errorf("container: failed to create pty pair: %w", ptyErr)
 		}
 		cmd.Stdin = slave
 		cmd.Stdout = slave
@@ -102,29 +105,33 @@ func Create(containerID, bundlePath string) error {
 			"containeruntime/pty-slave":  slave.Name(),
 		}
 
-		if err := cmd.Start(); err != nil {
-			return fmt.Errorf("container: failed to start command: %w", err)
+		startErr := cmd.Start()
+		if startErr != nil {
+			return fmt.Errorf("container: failed to start command: %w", startErr)
 		}
 
-		return fmt.Errorf("container: terminal mode is not supported yet")
-	} else {
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Start(); err != nil {
-			return fmt.Errorf("container: failed to start command: %w", err)
-		}
+		return errors.New("container: terminal mode is not supported yet")
 	}
 
-	if err := json.NewEncoder(w).Encode(&spec); err != nil {
-		return fmt.Errorf("container: failed to encode spec: %w", err)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	startErr := cmd.Start()
+	if startErr != nil {
+		return fmt.Errorf("container: failed to start command: %w", startErr)
+	}
+
+	encodeErr := json.NewEncoder(w).Encode(&spec)
+	if encodeErr != nil {
+		return fmt.Errorf("container: failed to encode spec: %w", encodeErr)
 	}
 
 	state.Pid = cmd.Process.Pid
 	state.Status = specs.StateCreated
 
-	if err := saveState(state); err != nil {
-		return fmt.Errorf("container: failed to update state with PID: %w", err)
+	saveErr = saveState(state)
+	if saveErr != nil {
+		return fmt.Errorf("container: failed to update state with PID: %w", saveErr)
 	}
 
 	return nil
@@ -132,22 +139,24 @@ func Create(containerID, bundlePath string) error {
 
 // Start starts the container with the given ID.
 func Start(containerID string) error {
-	state, err := loadState(containerID)
-	if err != nil {
-		return fmt.Errorf("container: failed to start container %s: %w", containerID, err)
+	state, loadErr := loadState(containerID)
+	if loadErr != nil {
+		return fmt.Errorf("container: failed to start container %s: %w", containerID, loadErr)
 	}
 
 	state.Status = specs.StateRunning
 
-	if err := syscall.Kill(state.Pid, syscall.SIGCONT); err != nil {
+	killErr := syscall.Kill(state.Pid, syscall.SIGCONT)
+	if killErr != nil {
 		state.Status = specs.StateStopped
-		saveState(state)
-		return fmt.Errorf("container: failed to send SIGCONT to PID %d: %w", state.Pid, err)
+		_ = saveState(state)
+		return fmt.Errorf("container: failed to send SIGCONT to PID %d: %w", state.Pid, killErr)
 	}
 
-	if err := saveState(state); err != nil {
+	saveErr := saveState(state)
+	if saveErr != nil {
 		state.Status = specs.StateStopped
-		return fmt.Errorf("container: failed to start container %s: %w", containerID, err)
+		return fmt.Errorf("container: failed to start container %s: %w", containerID, saveErr)
 	}
 
 	return nil
@@ -163,14 +172,15 @@ func State(containerID string) (*specs.State, error) {
 }
 
 // Kill stops and removes the container with the given ID.
-func Kill(containerID string, signal syscall.Signal) error {
-	state, err := loadState(containerID)
-	if err != nil {
-		return err
+func Kill(containerID string, sig syscall.Signal) error {
+	state, loadErr := loadState(containerID)
+	if loadErr != nil {
+		return loadErr
 	}
 
-	if err := syscall.Kill(state.Pid, signal); err != nil {
-		return fmt.Errorf("container: failed to send signal %d to container %s with PID %d: %w", signal, containerID, state.Pid, err)
+	killErr := syscall.Kill(state.Pid, sig)
+	if killErr != nil {
+		return fmt.Errorf("container: failed to send signal %d to container %s with PID %d: %w", sig, containerID, state.Pid, killErr)
 	}
 
 	return nil
@@ -182,11 +192,15 @@ func Init() {
 	if pipe == nil {
 		log.Fatalf("container: failed to create pipe")
 	}
-	defer pipe.Close()
 
 	var spec specs.Spec
-	if err := json.NewDecoder(pipe).Decode(&spec); err != nil {
-		log.Fatalf("container: failed to decode spec: %v", err)
+	decodeErr := json.NewDecoder(pipe).Decode(&spec)
+	if decodeErr != nil {
+		log.Fatalf("container: failed to decode spec: %v", decodeErr)
+	}
+	closeErr := pipe.Close()
+	if closeErr != nil {
+		log.Printf("container: failed to close pipe: %v", closeErr)
 	}
 
 	ch := make(chan os.Signal, 1)
@@ -195,15 +209,15 @@ func Init() {
 	<-ch
 
 	if spec.Hostname != "" {
-		if err := syscall.Sethostname([]byte(spec.Hostname)); err != nil {
-			log.Fatalf("container: failed to set hostname: %v", err)
+		setHostErr := syscall.Sethostname([]byte(spec.Hostname))
+		if setHostErr != nil {
+			log.Fatalf("container: failed to set hostname: %v", setHostErr)
 		}
 	}
 
 	rootfs := spec.Root.Path
 
-	err := syscall.Mount("", "/", "", syscall.MS_REC|syscall.MS_PRIVATE, "")
-	if err != nil {
+	if err := syscall.Mount("", "/", "", syscall.MS_REC|syscall.MS_PRIVATE, ""); err != nil {
 		log.Fatalf("container: failed to remount / as private: %v", err)
 	}
 
@@ -241,11 +255,6 @@ func Init() {
 		if err := syscall.Mount(m.Source, m.Destination, m.Type, 0, ""); err != nil {
 			log.Fatalf("container: failed to mount %s: %v", m.Destination, err)
 		}
-		defer func(dest string) {
-			if err := syscall.Unmount(dest, 0); err != nil {
-				log.Printf("container: failed to unmount %s: %v", dest, err)
-			}
-		}(m.Destination)
 	}
 
 	if err := syscall.Exec(spec.Process.Args[0], spec.Process.Args, os.Environ()); err != nil {
@@ -255,15 +264,16 @@ func Init() {
 
 // Delete removes the container with the given ID.
 func Delete(containerID string) error {
-	err := Kill(containerID, syscall.SIGKILL)
-	if err != nil {
+	killErr := Kill(containerID, syscall.SIGKILL)
+	if killErr != nil {
 		return deleteState(containerID)
 	}
 	for range 5 {
 		time.Sleep(1 * time.Second)
-		if err := Kill(containerID, 0); err != nil {
+		checkErr := Kill(containerID, 0)
+		if checkErr != nil {
 			return deleteState(containerID)
 		}
 	}
-	return fmt.Errorf("container: the container %s is stil running: %w", containerID, err)
+	return fmt.Errorf("container: the container %s is stil running: %w", containerID, killErr)
 }
