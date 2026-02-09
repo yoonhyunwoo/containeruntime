@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // CgroupManager manages the cgroups for a container.
@@ -46,7 +47,7 @@ func (m *CgroupManager) Setup() error {
 		controllers = append(controllers, "+"+s.Name())
 	}
 	if len(controllers) > 0 {
-		ctrl := []byte(fmt.Sprintf("%s", controllers))
+		ctrl := []byte(strings.Join(controllers, " "))
 		if err := os.WriteFile(filepath.Join(containerCgroup, "cgroup.subtree_control"), ctrl, 0700); err != nil {
 			return fmt.Errorf("cgroup: failed to set controllers: %w", err)
 		}
@@ -69,7 +70,7 @@ func (m *CgroupManager) Clean() error {
 	return nil
 }
 
-// helper to write a value to a cgroup file
+// writeCgroupFile writes a value to a cgroup file.
 func writeCgroupFile(path, filename, value string) error {
 	return os.WriteFile(filepath.Join(path, filename), []byte(value), 0700)
 }

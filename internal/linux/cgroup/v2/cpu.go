@@ -2,10 +2,11 @@ package cgroup
 
 import (
 	"fmt"
+	"strconv"
 )
 
-// CpuSubSystem is a struct that holds settings and statistics for the CPU controller in cgroup v2.
-type CpuSubSystem struct {
+// CPUSubSystem is a struct that holds settings and statistics for the CPU controller in cgroup v2.
+type CPUSubSystem struct {
 	// cpu.max: Sets the CPU bandwidth limit for the group.
 	// Quota corresponds to the $MAX value; -1 means 'max' (unlimited).
 	Quota int64
@@ -30,23 +31,22 @@ type PressureStall struct {
 	Total  uint64  // Accumulated time (microseconds)
 }
 
-// CpuPressure represents pressure stall information (PSI) from the cpu.pressure file.
-type CpuPressure struct {
+// CPUPressure represents pressure stall information (PSI) from the cpu.pressure file.
+type CPUPressure struct {
 	Some PressureStall // Some pressure stall information
 	Full PressureStall // Full pressure stall information
 }
 
-func (c *CpuSubSystem) Name() string {
+func (c *CPUSubSystem) Name() string {
 	return "cpu"
 }
 
-func (c *CpuSubSystem) Setup(path string) error {
-
+func (c *CPUSubSystem) Setup(path string) error {
 	files := []CgroupFile{
-		{"cpu.weight", fmt.Sprintf("%d", c.Weight)},
+		{"cpu.weight", strconv.FormatUint(c.Weight, 10)},
 		{"cpu.max", fmt.Sprintf("%d %d", c.Quota, c.Period)},
-		{"cpu.max.burst", fmt.Sprintf("%d", c.MaxBurst)},
-		{"cpu.idle", fmt.Sprintf("%d", c.Idle)},
+		{"cpu.max.burst", strconv.FormatUint(c.MaxBurst, 10)},
+		{"cpu.idle", strconv.FormatInt(c.Idle, 10)},
 	}
 
 	for _, f := range files {

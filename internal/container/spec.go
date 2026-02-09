@@ -47,7 +47,7 @@ func createCgroupSubSystems(spec *specs.Spec) ([]cgroup.SubSystem, error) {
 
 	if spec.Linux.Resources.CPU != nil {
 		cpu := spec.Linux.Resources.CPU
-		cpuSubSys := &cgroup.CpuSubSystem{
+		cpuSubSys := &cgroup.CPUSubSystem{
 			Quota:    *cpu.Quota,
 			Period:   *cpu.Period,
 			Idle:     *cpu.Idle,
