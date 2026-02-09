@@ -3,7 +3,6 @@ package container
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -97,6 +96,9 @@ func Create(containerID, bundlePath string) error {
 		if ptyErr != nil {
 			return fmt.Errorf("container: failed to create pty pair: %w", ptyErr)
 		}
+		defer master.Close()
+		defer slave.Close()
+
 		cmd.Stdin = slave
 		cmd.Stdout = slave
 		cmd.Stderr = slave
@@ -111,16 +113,14 @@ func Create(containerID, bundlePath string) error {
 		if startErr != nil {
 			return fmt.Errorf("container: failed to start command: %w", startErr)
 		}
-
-		return errors.New("container: terminal mode is not supported yet")
-	}
-
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	startErr := cmd.Start()
-	if startErr != nil {
-		return fmt.Errorf("container: failed to start command: %w", startErr)
+	} else {
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		startErr := cmd.Start()
+		if startErr != nil {
+			return fmt.Errorf("container: failed to start command: %w", startErr)
+		}
 	}
 
 	encodeErr := json.NewEncoder(w).Encode(&spec)
