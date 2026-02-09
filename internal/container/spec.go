@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
+
 	"github.com/yoonhyunwoo/containeruntime/internal/linux/cgroup/v2"
 )
 
@@ -89,7 +90,6 @@ func createCgroupSubSystems(spec *specs.Spec) []cgroup.SubSystem {
 			}
 			subSystems = append(subSystems, hugepageSubSys)
 		}
-
 	}
 
 	return subSystems

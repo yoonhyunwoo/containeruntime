@@ -5,14 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
-var (
-	containeruntimeStateDir = "/run/containeruntime"
-)
+const containeruntimeStateDir = "/run/containeruntime"
 
 // InitStateDir initializes the state directory for container runtime.
 func InitStateDir() error {
@@ -37,12 +34,14 @@ func saveState(state *specs.State) error {
 	defer f.Close()
 	defer os.Remove(tempPath)
 
-	if err := json.NewEncoder(f).Encode(state); err != nil {
-		return fmt.Errorf("container: failed to encode state to JSON: %w", err)
+	encodeErr := json.NewEncoder(f).Encode(state)
+	if encodeErr != nil {
+		return fmt.Errorf("container: failed to encode state to JSON: %w", encodeErr)
 	}
 
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("container: failed to close temporary state file: %w", err)
+	closeErr := f.Close()
+	if closeErr != nil {
+		return fmt.Errorf("container: failed to close temporary state file: %w", closeErr)
 	}
 
 	if err = os.Rename(tempPath, statePath); err != nil {
@@ -74,28 +73,6 @@ func deleteState(containerID string) error {
 		return fmt.Errorf("container: failed to delete state file for container %s: %w", containerID, err)
 	}
 	return nil
-}
-
-func listState() ([]*specs.State, error) {
-	var states []*specs.State
-	files, err := os.ReadDir(containeruntimeStateDir)
-	if err != nil {
-		return nil, fmt.Errorf("container: failed to list states in directory %s: %w", containeruntimeStateDir, err)
-	}
-
-	for _, file := range files {
-		containerID, ok := strings.CutSuffix(file.Name(), ".json")
-		if !ok {
-			continue
-		}
-		state, loadErr := loadState(containerID)
-		if loadErr != nil {
-			continue
-		}
-		states = append(states, state)
-	}
-
-	return states, nil
 }
 
 func newContainerState(id, bundlePath string) *specs.State {
