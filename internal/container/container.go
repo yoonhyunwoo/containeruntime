@@ -110,6 +110,28 @@ func Create(containerID, bundlePath string) error {
 		defer master.Close()
 		defer slave.Close()
 
+		if resizeErr := linuxtty.SyncWinsizeFromTerminal(int(os.Stdin.Fd()), int(slave.Fd())); resizeErr != nil {
+			return resizeErr
+		}
+
+		resizeSignal := make(chan os.Signal, 1)
+		signal.Notify(resizeSignal, syscall.SIGWINCH)
+		defer signal.Stop(resizeSignal)
+		done := make(chan struct{})
+		defer close(done)
+		go func() {
+			for {
+				select {
+				case <-done:
+					return
+				case <-resizeSignal:
+					if err := linuxtty.SyncWinsizeFromTerminal(int(os.Stdin.Fd()), int(slave.Fd())); err != nil {
+						log.Printf("container: failed to sync terminal size: %v", err)
+					}
+				}
+			}
+		}()
+
 		cmd.Stdin = slave
 		cmd.Stdout = slave
 		cmd.Stderr = slave

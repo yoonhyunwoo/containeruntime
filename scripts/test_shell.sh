@@ -99,6 +99,25 @@ fi
 state_created="$(${RUNTIME} state "${CONTAINER_ID}")"
 printf '%s\n' "${state_created}" | grep -q '"status": "created"'
 
+if [[ -t 0 ]] && [[ -t 1 ]] && [[ -e /dev/tty ]]; then
+  slave_path="$(printf '%s\n' "${state_created}" | tr -d '\n' | sed -n 's/.*"containeruntime\/pty-slave"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+  if [[ -z "${slave_path}" ]]; then
+    echo "shell test failed: missing pty-slave annotation in state output" >&2
+    exit 1
+  fi
+  if [[ ! -e "${slave_path}" ]]; then
+    echo "shell test failed: pty-slave path not found (${slave_path})" >&2
+    exit 1
+  fi
+
+  host_size="$(stty size < /dev/tty)"
+  pty_size="$(stty -F "${slave_path}" size)"
+  if [[ "${host_size}" != "${pty_size}" ]]; then
+    echo "shell test failed: pty size mismatch host=${host_size} pty=${pty_size}" >&2
+    exit 1
+  fi
+fi
+
 "${RUNTIME}" start "${CONTAINER_ID}"
 sleep 1
 
