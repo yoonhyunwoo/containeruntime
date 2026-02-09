@@ -11,13 +11,13 @@ import (
 )
 
 var (
-	containeruntimeStateDir string = "/run/containeruntime"
+	containeruntimeStateDir = "/run/containeruntime"
 )
 
 // InitStateDir initializes the state directory for container runtime.
 func InitStateDir() error {
 	if err := os.MkdirAll(containeruntimeStateDir, 0755); err != nil {
-		return fmt.Errorf("container: failed to create state directory: %v", err)
+		return fmt.Errorf("container: failed to create state directory: %w", err)
 	}
 	return nil
 }
@@ -41,7 +41,9 @@ func saveState(state *specs.State) error {
 		return fmt.Errorf("container: failed to encode state to JSON: %w", err)
 	}
 
-	f.Close()
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("container: failed to close temporary state file: %w", err)
+	}
 
 	if err = os.Rename(tempPath, statePath); err != nil {
 		return fmt.Errorf("container: failed to rename temporary file: %w", err)
@@ -74,7 +76,7 @@ func deleteState(containerID string) error {
 	return nil
 }
 
-func listState(containerID string) ([]*specs.State, error) {
+func listState() ([]*specs.State, error) {
 	var states []*specs.State
 	files, err := os.ReadDir(containeruntimeStateDir)
 	if err != nil {
@@ -82,14 +84,15 @@ func listState(containerID string) ([]*specs.State, error) {
 	}
 
 	for _, file := range files {
-		if strings.HasSuffix(file.Name(), ".json") {
-			containerID := strings.TrimSuffix(file.Name(), ".json")
-			state, err := loadState(containerID)
-			if err != nil {
-				continue
-			}
-			states = append(states, state)
+		containerID, ok := strings.CutSuffix(file.Name(), ".json")
+		if !ok {
+			continue
 		}
+		state, loadErr := loadState(containerID)
+		if loadErr != nil {
+			continue
+		}
+		states = append(states, state)
 	}
 
 	return states, nil
