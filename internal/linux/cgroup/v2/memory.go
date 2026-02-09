@@ -20,12 +20,12 @@ type MemorySubSystem struct {
 	ZswapWriteback int64
 }
 
-func NewMemorySubSystem(minVal, low, high, max, peak, oomGroup, swapHigh, swapPeak, swapMax, zswapMax, zswapWriteback int64) *MemorySubSystem {
+func NewMemorySubSystem(minVal, low, high, maxVal, peak, oomGroup, swapHigh, swapPeak, swapMax, zswapMax, zswapWriteback int64) *MemorySubSystem {
 	return &MemorySubSystem{
 		Min:            minVal,
 		Low:            low,
 		High:           high,
-		Max:            max,
+		Max:            maxVal,
 		Peak:           peak,
 		OOMGroup:       oomGroup,
 		SwapHigh:       swapHigh,

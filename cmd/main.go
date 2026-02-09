@@ -23,7 +23,6 @@ func newRootCommand() *cli.Command {
 		Usage:     "This command creates a new container. You must provide a unique container ID and the path to the bundle containing the container's configuration.",
 		ArgsUsage: "<container-id> <path-to-bundle>",
 		Action: func(_ context.Context, command *cli.Command) error {
-
 			if command.Args().Len() != 2 {
 				return errors.New("main: container-id and path-to-bundle are required")
 			}
