@@ -57,7 +57,8 @@ func Create(containerID, bundlePath string) error {
 	}
 
 	// #nosec G204 -- self executable path is resolved from os.Executable and invoked intentionally.
-	cmd := exec.CommandContext(context.Background(), selfExe, append([]string{"init"}, spec.Process.Args...)...)
+	// Note: do not append spec.Process.Args here; init reads spec from the pipe and execs it.
+	cmd := exec.CommandContext(context.Background(), selfExe, "init")
 
 	var cloneFlags uintptr
 	for _, ns := range spec.Linux.Namespaces {
