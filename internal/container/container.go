@@ -1,6 +1,7 @@
 package container
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,7 +53,8 @@ func Create(containerID, bundlePath string) error {
 		return fmt.Errorf("container: failed to get executable path: %w", exeErr)
 	}
 
-	cmd := exec.Command(selfExe, append([]string{"init"}, spec.Process.Args...)...)
+	// #nosec G204 -- self executable path is resolved from os.Executable and invoked intentionally.
+	cmd := exec.CommandContext(context.Background(), selfExe, append([]string{"init"}, spec.Process.Args...)...)
 
 	var cloneFlags uintptr
 	for _, ns := range spec.Linux.Namespaces {
@@ -227,7 +229,7 @@ func Init() {
 
 	pivotDir := filepath.Join(rootfs, ".old_root")
 
-	if err := os.MkdirAll(pivotDir, 0755); err != nil {
+	if err := os.MkdirAll(pivotDir, 0o750); err != nil {
 		log.Fatalf("container: failed to create pivot directory %s: %v", pivotDir, err)
 	}
 
@@ -248,7 +250,7 @@ func Init() {
 	}
 
 	for _, m := range spec.Mounts {
-		if err := os.MkdirAll(m.Destination, 0755); err != nil {
+		if err := os.MkdirAll(m.Destination, 0o750); err != nil {
 			log.Fatalf("container: failed to create mount destination %s: %v", m.Destination, err)
 		}
 
@@ -257,6 +259,7 @@ func Init() {
 		}
 	}
 
+	// #nosec G204 -- process args are explicitly provided through OCI config and are expected runtime input.
 	if err := syscall.Exec(spec.Process.Args[0], spec.Process.Args, os.Environ()); err != nil {
 		log.Fatalf("container: failed to exec command %s: %v", spec.Process.Args[0], err)
 	}
