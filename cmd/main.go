@@ -16,8 +16,8 @@ import (
 	"github.com/yoonhyunwoo/containeruntime/internal/linux/cgroup/v2"
 )
 
-var (
-	createCommand = &cli.Command{
+func newRootCommand() *cli.Command {
+	createCommand := &cli.Command{
 		Name:      "create",
 		Usage:     "This command creates a new container. You must provide a unique container ID and the path to the bundle containing the container's configuration.",
 		ArgsUsage: "<container-id> <path-to-bundle>",
@@ -43,7 +43,7 @@ var (
 		},
 	}
 
-	deleteCommand = &cli.Command{
+	deleteCommand := &cli.Command{
 		Name:      "delete",
 		Usage:     "This command deletes a container and its associated resources.",
 		ArgsUsage: "<container-id>",
@@ -64,15 +64,15 @@ var (
 		},
 	}
 
-	initCommand = &cli.Command{
+	initCommand := &cli.Command{
 		Name: "init",
-		Action: func(_ context.Context, command *cli.Command) error {
+		Action: func(_ context.Context, _ *cli.Command) error {
 			container.Init()
 			return nil
 		},
 	}
 
-	killCommand = &cli.Command{
+	killCommand := &cli.Command{
 		Name:      "kill",
 		Usage:     "This command sends a specific signal to the main process of a container.",
 		ArgsUsage: "<containeriD> <signal>",
@@ -106,7 +106,7 @@ var (
 		},
 	}
 
-	startCommand = &cli.Command{
+	startCommand := &cli.Command{
 		Name:      "start",
 		Usage:     "This command starts a previously created container. It runs the user-specified program defined in the container's configuration.",
 		ArgsUsage: "<container-id>",
@@ -124,7 +124,7 @@ var (
 		},
 	}
 
-	stateCommand = &cli.Command{
+	stateCommand := &cli.Command{
 		Name:      "state",
 		Usage:     "This command returns the current state of a container.",
 		ArgsUsage: "<container-id>",
@@ -155,14 +155,8 @@ var (
 			return nil
 		},
 	}
-)
 
-func main() {
-	if err := container.InitStateDir(); err != nil {
-		log.Fatal(err)
-	}
-
-	rootCmd := &cli.Command{
+	return &cli.Command{
 		Commands: []*cli.Command{
 			createCommand,
 			deleteCommand,
@@ -172,6 +166,14 @@ func main() {
 			stateCommand,
 		},
 	}
+}
+
+func main() {
+	if err := container.InitStateDir(); err != nil {
+		log.Fatal(err)
+	}
+
+	rootCmd := newRootCommand()
 
 	if err := rootCmd.Run(context.Background(), os.Args); err != nil {
 		log.Fatal(err)
