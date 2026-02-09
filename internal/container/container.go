@@ -16,6 +16,7 @@ import (
 
 	"github.com/yoonhyunwoo/containeruntime/internal/linux/cgroup/v2"
 	"github.com/yoonhyunwoo/containeruntime/internal/linux/pty"
+	linuxtty "github.com/yoonhyunwoo/containeruntime/internal/linux/term"
 )
 
 // Create initializes a new container with the given ID and root filesystem path.
@@ -92,6 +93,16 @@ func Create(containerID, bundlePath string) error {
 	cmd.ExtraFiles = []*os.File{r}
 
 	if spec.Process.Terminal {
+		restoreTerminal, rawErr := linuxtty.EnterRawMode(int(os.Stdin.Fd()))
+		if rawErr != nil {
+			return rawErr
+		}
+		defer func() {
+			if err := restoreTerminal(); err != nil {
+				log.Printf("container: failed to restore terminal mode: %v", err)
+			}
+		}()
+
 		master, slave, ptyErr := pty.PtyPair()
 		if ptyErr != nil {
 			return fmt.Errorf("container: failed to create pty pair: %w", ptyErr)
