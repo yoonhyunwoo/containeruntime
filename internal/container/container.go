@@ -251,6 +251,11 @@ func attachTerminal(state *specs.State) error {
 	defer signal.Stop(resizeSignal)
 	done := make(chan struct{})
 	defer close(done)
+
+	forwardSignal := make(chan os.Signal, 8)
+	signal.Notify(forwardSignal, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGHUP, syscall.SIGTSTP, syscall.SIGCONT)
+	defer signal.Stop(forwardSignal)
+
 	go func() {
 		for {
 			select {
@@ -259,6 +264,12 @@ func attachTerminal(state *specs.State) error {
 			case <-resizeSignal:
 				if err := linuxtty.SyncWinsizeFromTerminal(int(os.Stdin.Fd()), int(master.Fd())); err != nil {
 					log.Printf("container: failed to sync terminal size: %v", err)
+				}
+			case sig := <-forwardSignal:
+				// Forward to the container process group so interactive signals
+				// reach the shell and its children.
+				if err := syscall.Kill(-state.Pid, sig.(syscall.Signal)); err != nil && !errors.Is(err, syscall.ESRCH) {
+					log.Printf("container: failed to forward signal %v to container pid %d: %v", sig, state.Pid, err)
 				}
 			}
 		}
