@@ -13,28 +13,28 @@ func SetupCgroups() error {
 	containerCgroup := filepath.Join(cgroupRoot, "gamap-container")
 	processCgroup := filepath.Join(containerCgroup, "processes")
 
-	if err := os.Mkdir(containerCgroup, 0755); err != nil && !os.IsExist(err) {
+	if err := os.Mkdir(containerCgroup, 0o750); err != nil && !os.IsExist(err) {
 		return fmt.Errorf("cgroup: failed to create container cgroup directory %s: %w", containerCgroup, err)
 	}
 
-	if err := os.WriteFile(filepath.Join(containerCgroup, "cgroup.subtree_control"), []byte("+pids +memory"), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(containerCgroup, "cgroup.subtree_control"), []byte("+pids +memory"), 0o600); err != nil {
 		return fmt.Errorf("cgroup: failed to set cgroup controllers: %w", err)
 	}
 
-	if err := os.Mkdir(processCgroup, 0755); err != nil && !os.IsExist(err) {
+	if err := os.Mkdir(processCgroup, 0o750); err != nil && !os.IsExist(err) {
 		return fmt.Errorf("cgroup: failed to create process cgroup directory %s: %w", processCgroup, err)
 	}
 
-	if err := os.WriteFile(filepath.Join(processCgroup, "pids.max"), []byte("20"), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(processCgroup, "pids.max"), []byte("20"), 0o600); err != nil {
 		return fmt.Errorf("cgroup: failed to set pids.max: %w", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(processCgroup, "memory.max"), []byte("100M"), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(processCgroup, "memory.max"), []byte("100M"), 0o600); err != nil {
 		return fmt.Errorf("cgroup: failed to set memory.max: %w", err)
 	}
 
 	pid := strconv.Itoa(os.Getpid())
-	if err := os.WriteFile(filepath.Join(processCgroup, "cgroup.procs"), []byte(pid), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(processCgroup, "cgroup.procs"), []byte(pid), 0o600); err != nil {
 		return fmt.Errorf("cgroup: failed to add process %s to cgroup: %w", pid, err)
 	}
 
@@ -53,7 +53,7 @@ func CleanCgroups() error {
 	}
 
 	procsFile := filepath.Join(processCgroup, "cgroup.procs")
-	if err := os.WriteFile(procsFile, []byte(""), 0700); err != nil {
+	if err := os.WriteFile(procsFile, []byte(""), 0o600); err != nil {
 		return fmt.Errorf("cgroup: failed to remove processes from cgroup: %w", err)
 	}
 

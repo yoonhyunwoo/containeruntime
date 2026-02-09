@@ -38,7 +38,7 @@ func NewCgroupManager(containerName string, subsystems []SubSystem) *CgroupManag
 // Setup creates the cgroup hierarchy and configures all subsystems.
 func (m *CgroupManager) Setup() error {
 	containerCgroup := filepath.Join(m.root, m.containerName)
-	if err := os.Mkdir(containerCgroup, 0755); err != nil && !os.IsExist(err) {
+	if err := os.Mkdir(containerCgroup, 0o750); err != nil && !os.IsExist(err) {
 		return fmt.Errorf("cgroup: failed to create container cgroup: %w", err)
 	}
 
@@ -48,7 +48,7 @@ func (m *CgroupManager) Setup() error {
 	}
 	if len(controllers) > 0 {
 		ctrl := []byte(strings.Join(controllers, " "))
-		if err := os.WriteFile(filepath.Join(containerCgroup, "cgroup.subtree_control"), ctrl, 0700); err != nil {
+		if err := os.WriteFile(filepath.Join(containerCgroup, "cgroup.subtree_control"), ctrl, 0o600); err != nil {
 			return fmt.Errorf("cgroup: failed to set controllers: %w", err)
 		}
 	}
@@ -72,5 +72,5 @@ func (m *CgroupManager) Clean() error {
 
 // writeCgroupFile writes a value to a cgroup file.
 func writeCgroupFile(path, filename, value string) error {
-	return os.WriteFile(filepath.Join(path, filename), []byte(value), 0700)
+	return os.WriteFile(filepath.Join(path, filename), []byte(value), 0o600)
 }
