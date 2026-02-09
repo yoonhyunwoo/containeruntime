@@ -1,18 +1,52 @@
 BINARY_NAME=containeruntime
 GOOS=linux
+CONTAINER_ENGINE?=podman
 
-.PHONY: build setup-ubuntu lint
+.PHONY: fmt vet lint test test-shell test-smoke test-stress test-runtime vuln tidy build build-all all setup-ubuntu setup-stress
+
+fmt:
+	gofmt -w .
+	goimports -w .
+
+vet:
+	go vet ./...
+
+test:
+	go test -v -race -coverprofile=coverage.out ./...
+
+test-shell: build setup-ubuntu
+	./scripts/test_shell.sh
+
+test-smoke: build setup-ubuntu
+	./scripts/test_smoke.sh
+
+test-stress: build setup-stress
+	./scripts/test_stress.sh
+
+test-runtime: test-smoke test-stress
+
+vuln:
+	govulncheck ./...
+
+tidy:
+	go mod tidy
+	go mod verify
 
 build:
 	GOOS=$(GOOS) go build -o $(BINARY_NAME) cmd/main.go
 
+build-all:
+	go build ./...
+
+all: fmt vet lint test-runtime vuln build build-all
+
 setup-ubuntu:
-	docker create --name temp-ubuntu ubuntu:22.04
+	$(CONTAINER_ENGINE) create --name temp-ubuntu ubuntu:22.04
 	mkdir -p /root/testbundle/ubuntufs
-	docker export temp-ubuntu -o /tmp/ubuntu.tar
+	$(CONTAINER_ENGINE) export temp-ubuntu -o /tmp/ubuntu.tar
 	tar -xf /tmp/ubuntu.tar -C /root/testbundle/ubuntufs
 	rm /tmp/ubuntu.tar
-	docker rm temp-ubuntu
+	$(CONTAINER_ENGINE) rm temp-ubuntu
 	printf '%s\n' '{' \
 	'"ociVersion": "1.0.2",' \
 	'"process": {' \
@@ -65,12 +99,12 @@ setup-ubuntu:
 	'}' > /root/testbundle/config.json
 
 setup-stress:
-	docker create --name temp-stress progrium/stress
+	$(CONTAINER_ENGINE) create --name temp-stress progrium/stress
 	mkdir -p /root/testbundle/stressfs
-	docker export temp-stress -o /tmp/stress.tar
+	$(CONTAINER_ENGINE) export temp-stress -o /tmp/stress.tar
 	tar -xf /tmp/stress.tar -C /root/testbundle/stressfs
 	rm /tmp/stress.tar
-	docker rm temp-stress
+	$(CONTAINER_ENGINE) rm temp-stress
 	printf '%s\n' '{' \
 	'"ociVersion": "1.0.2",' \
 	'"process": {' \
@@ -123,4 +157,4 @@ setup-stress:
 	'}' > /root/testbundle/config-stress.json
 
 lint:
-	go fmt ./...
+	golangci-lint run
