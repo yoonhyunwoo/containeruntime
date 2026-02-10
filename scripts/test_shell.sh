@@ -135,4 +135,15 @@ if "${RUNTIME}" state "${CONTAINER_ID}" >/dev/null 2>&1; then
 fi
 
 echo "shell test passed: terminal lifecycle create/start/delete succeeded (${CONTAINER_ID})"
+
+# Also validate that the convenience `run` command exists and does not error.
+RUN_ID="run-${CONTAINER_ID}"
+timeout 10 "${RUNTIME}" run "${RUN_ID}" "${BUNDLE_DIR}" >>"${LOG_FILE}" 2>&1 || {
+  echo "shell test failed: run command returned non-zero exit status" >&2
+  cat "${LOG_FILE}" >&2
+  exit 1
+}
+delete_with_retry >/dev/null 2>&1 || true
+
+echo "shell test passed: run command succeeded (${RUN_ID})"
 exit 0

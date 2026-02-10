@@ -43,6 +43,46 @@ func newRootCommand() *cli.Command {
 		},
 	}
 
+	runCommand := &cli.Command{
+		Name:      "run",
+		Usage:     "Convenience command that runs create + start and attaches to the container if a TTY is available.",
+		ArgsUsage: "<container-id> <path-to-bundle>",
+		Action: func(_ context.Context, command *cli.Command) error {
+			if command.Args().Len() != 2 {
+				return errors.New("main: container-id and path-to-bundle are required")
+			}
+
+			containerID := command.Args().Get(0)
+			bundlePath := command.Args().Get(1)
+
+			if err := cgroup.SetupCgroups(); err != nil {
+				return fmt.Errorf("main: failed to set up cgroups: %w", err)
+			}
+			if err := container.Run(containerID, bundlePath); err != nil {
+				return fmt.Errorf("main: failed to run container: %w", err)
+			}
+
+			fmt.Println(containerID)
+			return nil
+		},
+	}
+
+	attachCommand := &cli.Command{
+		Name:      "attach",
+		Usage:     "Attach the current terminal to a previously created container (TTY only).",
+		ArgsUsage: "<container-id>",
+		Action: func(_ context.Context, command *cli.Command) error {
+			if command.Args().Len() != 1 {
+				return errors.New("main: container-id is required")
+			}
+			containerID := command.Args().First()
+			if err := container.Attach(containerID); err != nil {
+				return fmt.Errorf("main: failed to attach container %s: %w", containerID, err)
+			}
+			return nil
+		},
+	}
+
 	deleteCommand := &cli.Command{
 		Name:      "delete",
 		Usage:     "This command deletes a container and its associated resources.",
@@ -159,6 +199,8 @@ func newRootCommand() *cli.Command {
 	return &cli.Command{
 		Commands: []*cli.Command{
 			createCommand,
+			runCommand,
+			attachCommand,
 			deleteCommand,
 			initCommand,
 			killCommand,

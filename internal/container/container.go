@@ -203,12 +203,6 @@ func Start(containerID string) error {
 		return fmt.Errorf("container: failed to start container %s: %w", containerID, saveErr)
 	}
 
-	if shouldAttachTerminal(state) {
-		if attachErr := attachTerminal(state); attachErr != nil {
-			return attachErr
-		}
-	}
-
 	return nil
 }
 
@@ -218,6 +212,33 @@ func shouldAttachTerminal(state *specs.State) bool {
 	}
 	_, hasMasterFD := state.Annotations["containeruntime/pty-master-fd"]
 	return hasMasterFD
+}
+
+// Attach attaches the current terminal to a terminal-mode container (if supported).
+// If stdin/stdout are not TTYs, this is a no-op.
+func Attach(containerID string) error {
+	state, loadErr := loadState(containerID)
+	if loadErr != nil {
+		return fmt.Errorf("container: failed to attach container %s: %w", containerID, loadErr)
+	}
+	if !shouldAttachTerminal(state) {
+		return nil
+	}
+	return attachTerminal(state)
+}
+
+// Run is a convenience helper: create + start + (tty) attach.
+func Run(containerID, bundlePath string) error {
+	if err := Create(containerID, bundlePath); err != nil {
+		return err
+	}
+	if err := Start(containerID); err != nil {
+		return err
+	}
+	if err := Attach(containerID); err != nil {
+		return err
+	}
+	return nil
 }
 
 func attachTerminal(state *specs.State) error {
